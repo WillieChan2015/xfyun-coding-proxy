@@ -12,8 +12,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added / 新增
 
-- 新增 `CHANGELOG.md`，用于持续记录版本变更。
-- Added `CHANGELOG.md` for ongoing release notes and version history.
+- 新增会话统计摘要：退出时（Ctrl+C）输出本次运行的请求数、token 消耗、重试次数、错误数和运行时长。
+- Added session summary: prints request count, token usage, retries, errors, and uptime on exit (Ctrl+C).
+- 新增讯飞业务错误码 `10010`（Engine Busy）和 `10006`（连接异常断开）到自动重试范围。
+- Added iFlytek business error codes `10010` (Engine Busy) and `10006` (abnormal connection closure) to auto-retry scope.
+- 日志优化：请求完成时展示 token 消耗（`in=X out=Y total=Z`），≥10k 时缩写为 `12.3k(12345)` 格式。
+- Improved request log output: shows token usage (`in=X out=Y total=Z`), abbreviates ≥10k values as `12.3k(12345)`.
 
 ## [0.0.1-alpha] - 2026-04-30
 

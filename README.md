@@ -34,8 +34,9 @@ OpenCode / Cursor / Trae / Other tools
 - **Path Rewriting** — `/v1/` → iFlytek `/v2/` prefix
 - **SSE Stream Passthrough** — Real-time streaming with non-standard iFlytek events filtered out (`progress_notice`, `context_usage`)
 - **Field Cleanup** — Automatically removes iFlytek-specific fields like `reasoning_content`, `plugins_content`
-- **Auto Retry** — Exponential backoff on HTTP 429/503 and iFlytek business error code 10012
+- **Auto Retry** — Exponential backoff on HTTP 429/503 and iFlytek business error codes 10012, 10010, 10006
 - **Logging** — Console (one-line readable) + daily-rotating local files (7-day retention)
+- **Session Summary** — Prints request count, token usage, retries, errors, and uptime on exit
 
 ## Runtime Requirements
 
@@ -157,6 +158,7 @@ src/
 ├── proxy.ts    # Core proxy: forwarding + streaming + retry + SSE filter
 ├── cli.ts      # CLI argument parsing (commander)
 ├── config.ts   # Config: CLI args + env vars + validation
+├── stats.ts    # Session statistics tracking + exit summary
 └── util.ts     # Token usage extraction + formatting
 ```
 

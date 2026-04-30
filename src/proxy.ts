@@ -1,12 +1,13 @@
 import { FastifyRequest, FastifyReply, FastifyInstance } from 'fastify';
 import { config } from './config';
 import { extractTokenUsage, fmtTokens } from './util';
+import { sessionStats } from './stats';
 
 // HTTP 状态码级别的重试条件：429 限流、503 服务过载
 export const RETRYABLE_STATUS_CODES = new Set([429, 503]);
 
-// 讯飞业务层错误码：10012 引擎内部繁忙
-export const RETRYABLE_XFYUN_CODES = new Set([10012]);
+// 讯飞业务层错误码：10012 引擎内部繁忙，10010 引擎忙/RecvFromEngineError，1006 连接异常断开
+export const RETRYABLE_XFYUN_CODES = new Set([10012, 10010, 1006]);
 
 /**
  * 检测响应体是否包含讯飞可重试错误码
@@ -301,6 +302,10 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
       'upstream error',
     );
 
+    sessionStats.requestCount++;
+    sessionStats.retries += retries;
+    sessionStats.errors++;
+
     reply.status(response.status);
     reply.send(responseBodyText);
     return;
@@ -364,6 +369,10 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
       },
       `stream completed | ${durationMs}ms | ${tokenInfo}`.replace(/ \| $/, ''),
     );
+    sessionStats.requestCount++;
+    sessionStats.totalPromptTokens += promptTokens ?? 0;
+    sessionStats.totalCompletionTokens += completionTokens ?? 0;
+    sessionStats.retries += retries;
     return;
   }
 
@@ -400,6 +409,12 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     },
     `request completed | ${durationMs}ms | ${tokenInfo}`.replace(/ \| $/, ''),
   );
+
+  sessionStats.requestCount++;
+  sessionStats.totalPromptTokens += usageInfo.promptTokens ?? 0;
+  sessionStats.totalCompletionTokens += usageInfo.completionTokens ?? 0;
+  sessionStats.retries += retries;
+  if (!response.ok) sessionStats.errors++;
 
   reply.status(response.status);
   reply.send(responseBody);

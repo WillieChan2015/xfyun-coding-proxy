@@ -3,6 +3,7 @@ import Fastify, { FastifyError, FastifyRequest, FastifyReply } from 'fastify';
 import cors from '@fastify/cors';
 import { config, validateConfig } from './config';
 import { handleProxy } from './proxy';
+import { printSessionSummary } from './stats';
 
 async function main() {
   validateConfig();
@@ -85,6 +86,7 @@ async function main() {
       try {
         await server.close();
         server.log.info('Server closed');
+        printSessionSummary();
         process.exit(0);
       } catch (err) {
         server.log.error(err, 'Error during shutdown');
