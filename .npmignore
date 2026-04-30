@@ -1,0 +1,16 @@
+src/
+test/
+docs/
+logs/
+coverage/
+.env
+.env.example
+.eslintrc*
+.prettierrc*
+.prettierignore
+eslint.config.*
+vitest.config.*
+.git/
+.github/
+*.ts
+!dist/

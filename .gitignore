@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+coverage/
+src/**/*.js
+src/**/*.d.ts
+src/**/*.js.map
+
+# Local runtime artifacts
+logs/
+.DS_Store
+
+# Local secrets
+.env
+
+# Local AI instructions and private docs (kept on developer machines, not committed)
+.github/copilot-instructions.md
+.github/docs/
+docs/superpowers/
