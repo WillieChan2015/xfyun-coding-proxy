@@ -32,6 +32,7 @@ OpenCode / Cursor / Trae / Other tools
 
 - **API Key Injection** — Clients don't need the real key; the proxy replaces the `Authorization` header on forwarding
 - **Path Rewriting** — `/v1/` → iFlytek `/v2/` prefix
+- **GET & POST Proxy** — Forwards both `POST /v1/*` (chat completions) and `GET /v1/*` (models listing)
 - **SSE Stream Passthrough** — Real-time streaming with non-standard iFlytek events filtered out (`progress_notice`, `context_usage`)
 - **Field Cleanup** — Automatically removes iFlytek-specific fields like `reasoning_content`, `plugins_content`
 - **Auto Retry** — Exponential backoff on HTTP 429/503 and iFlytek business error codes 10012, 10010, 10006

@@ -419,3 +419,37 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
   reply.status(response.status);
   reply.send(responseBody);
 }
+
+/**
+ * GET 请求透传代理（如 /v1/models）
+ * 不注入 body、不覆盖 model、不做 SSE 过滤，仅路径重写 + API Key 注入 + 透传响应
+ */
+export async function handleGetProxy(
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<void> {
+  const upstreamUrl = buildUpstreamUrl(request.url);
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${config.apiKey}`,
+  };
+
+  const response = await fetch(upstreamUrl, {
+    method: 'GET',
+    headers,
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  const body = await response.text();
+
+  request.log.info(
+    { status: response.status, url: request.url },
+    `GET proxied | ${response.status}`,
+  );
+
+  sessionStats.requestCount++;
+
+  reply.status(response.status);
+  reply.header('Content-Type', response.headers.get('content-type') || 'application/json');
+  reply.send(body);
+}

@@ -2,7 +2,7 @@
 import Fastify, { FastifyError, FastifyRequest, FastifyReply } from 'fastify';
 import cors from '@fastify/cors';
 import { config, validateConfig } from './config';
-import { handleProxy } from './proxy';
+import { handleProxy, handleGetProxy } from './proxy';
 import { printSessionSummary } from './stats';
 
 async function main() {
@@ -55,6 +55,7 @@ async function main() {
   });
 
   server.post('/v1/*', handleProxy);
+  server.get('/v1/*', handleGetProxy);
 
   server.get('/health', async () => {
     return { status: 'ok', upstream: config.baseUrl };

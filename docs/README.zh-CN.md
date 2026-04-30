@@ -32,6 +32,7 @@ OpenCode / Cursor / Trae / 其他工具
 
 - **API Key 注入** — 客户端无需持有真实 Key，代理在转发时自动替换 `Authorization` header
 - **路径重写** — `/v1/` → 讯飞 `/v2/` 前缀
+- **GET & POST 代理** — 同时支持 `POST /v1/*`（聊天补全）和 `GET /v1/*`（模型列表）转发
 - **SSE 流式透传** — 实时转发流式响应，过滤讯飞非标准 SSE 事件（`progress_notice`、`context_usage`）
 - **字段清理** — 自动移除 `reasoning_content`、`plugins_content` 等讯飞特有字段
 - **自动重试** — HTTP 429/503 及讯飞业务错误码 10012、10010、10006，指数退避重试
