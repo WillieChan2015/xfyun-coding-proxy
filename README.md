@@ -71,7 +71,7 @@ By default, the proxy listens on `127.0.0.1:3000` and exposes an OpenAI-compatib
 
 ## Development
 
-Source development requires Bun because the local start and watch scripts call Bun directly. Keep Node.js 20+ available as the supported runtime target for `pnpm build`, package verification, and running compiled `dist/` output.
+Source development requires Bun because the local start, watch, and test scripts all call Bun directly. Keep Node.js 20+ available as the supported runtime target for `pnpm build`, package verification, and running compiled `dist/` output.
 
 ```bash
 pnpm dev          # Start with hot reload

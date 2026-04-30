@@ -6,8 +6,11 @@ import { sessionStats } from './stats';
 // HTTP 状态码级别的重试条件：429 限流、503 服务过载
 export const RETRYABLE_STATUS_CODES = new Set([429, 503]);
 
-// 讯飞业务层错误码：10012 引擎内部繁忙，10010 引擎忙/RecvFromEngineError，1006 连接异常断开
-export const RETRYABLE_XFYUN_CODES = new Set([10012, 10010, 1006]);
+// 讯飞业务层错误码：
+//   10012 引擎内部繁忙
+//   10010 引擎忙 / RecvFromEngineError / WebSocket 异常断开
+//   11210 NotEnoughCvError 额度/配额不足（FPM 速率限制，等待后可重试）
+export const RETRYABLE_XFYUN_CODES = new Set([10012, 10010, 11210]);
 
 /**
  * 检测响应体是否包含讯飞可重试错误码

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'bun:test';
 import {
   isRetryableXfyunError,
   rewritePath,
@@ -18,6 +18,20 @@ describe('isRetryableXfyunError', () => {
 
   it('does not match other codes', () => {
     expect(isRetryableXfyunError('{"code":400,"msg":"bad request"}')).toBe(false);
+  });
+
+  it('detects code 11210 NotEnoughCvError', () => {
+    expect(
+      isRetryableXfyunError(
+        '{"code":11210,"msg":"NotEnoughCvError: FPM rate limit exceeded"}',
+      ),
+    ).toBe(true);
+  });
+
+  it('detects code 10010 RecvFromEngineError', () => {
+    expect(
+      isRetryableXfyunError('{"code":10010,"msg":"RecvFromEngineError: Engine Busy"}'),
+    ).toBe(true);
   });
 
   it('returns false for empty string', () => {
@@ -64,7 +78,13 @@ describe('RETRYABLE_STATUS_CODES', () => {
 });
 
 describe('RETRYABLE_XFYUN_CODES', () => {
-  it('includes 10012', () => {
+  it('includes 10012, 10010, 11210', () => {
     expect(RETRYABLE_XFYUN_CODES.has(10012)).toBe(true);
+    expect(RETRYABLE_XFYUN_CODES.has(10010)).toBe(true);
+    expect(RETRYABLE_XFYUN_CODES.has(11210)).toBe(true);
+  });
+
+  it('does not include 1006 (WebSocket close code, not xfyun business code)', () => {
+    expect(RETRYABLE_XFYUN_CODES.has(1006)).toBe(false);
   });
 });

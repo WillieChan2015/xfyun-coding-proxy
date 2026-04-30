@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    // 仅为测试目录接入 Bun 类型，避免影响生产构建的输出范围。
+    "rootDir": "..",
+    "noEmit": true,
+    "types": ["bun", "node"]
+  },
+  "include": ["./**/*.ts"]
+}

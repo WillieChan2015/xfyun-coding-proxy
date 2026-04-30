@@ -21,6 +21,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - 新增 `GET /v1/*` 代理支持，可透传 `/v1/models` 等 GET 请求到讯飞上游。
 - Added `GET /v1/*` proxy support, forwarding GET requests like `/v1/models` to the iFlytek upstream.
 
+### Changed / 变更
+
+- 测试框架由 Vitest 迁移为 Bun 内置测试运行器（`bun:test`），移除 vitest 依赖和配置文件。
+- Migrated test framework from Vitest to Bun's built-in test runner (`bun:test`), removing vitest dependency and config file.
+
 ## [0.0.1-alpha] - 2026-04-30
 
 ### Added / 新增
