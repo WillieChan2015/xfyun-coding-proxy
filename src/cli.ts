@@ -16,7 +16,7 @@ export function parseCli(): CliOptions {
   let result: CliOptions | undefined;
 
   program
-    .name('xfyun-coding-proxy')
+    .name('maas-coding-proxy')
     .description('Local proxy for iFlytek Xingchen Coding Plan API (OpenAI-compatible)')
     .version('0.0.1-alpha');
 

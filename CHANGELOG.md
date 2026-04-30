@@ -12,8 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added / 新增
 
-- 支持 npm 全局安装：`npm i -g xfyun-coding-proxy` 后可直接运行 `xfyun-coding-proxy start`，无需 Bun。
-- Supports npm global install: `npm i -g xfyun-coding-proxy`, then run `xfyun-coding-proxy start` directly without Bun.
+- 支持 npm 全局安装：`npm i -g maas-coding-proxy` 后可直接运行 `maas-coding-proxy start`，无需 Bun。
+- Supports npm global install: `npm i -g maas-coding-proxy`, then run `maas-coding-proxy start` directly without Bun.
 - 新增 `pnpm release:auto:dry-run <version-or-bump>` 独立脚本，便于直接预演完整本地自动化发布流程。
 - Added dedicated `pnpm release:auto:dry-run <version-or-bump>` script for previewing the full local automated release flow.
 - 新增 `pnpm release:auto <version-or-bump>`，可把 dry-run、测试、构建、版本升级、tag 创建、校验与可选 push 串成一条本地自动化发布命令。
@@ -28,10 +28,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Added `--log-dir <dir>` CLI option for customizing log output directory.
 - CLI 新增 `-c, --config <path>` 选项，支持指定自定义配置文件路径。
 - Added `-c, --config <path>` CLI option to specify a custom configuration file.
-- 新增配置发现链：按 CLI flags → 环境变量 → `$XFYUN_CODING_PROXY_CONFIG` → XDG config 目录 → CWD `.env` 顺序查找，全局安装后可将配置文件放到 `~/.config/xfyun-coding-proxy/config.env`。
-- Added config discovery chain: CLI flags → env vars → `$XFYUN_CODING_PROXY_CONFIG` → XDG config dir → CWD `.env`. Global install users can place config at `~/.config/xfyun-coding-proxy/config.env`.
-- 新增 `XFYUN_LOG_DIR` 环境变量支持，全局安装时默认日志写入 `~/.local/state/xfyun-coding-proxy/logs/`。
-- Added `XFYUN_LOG_DIR` env var support; when installed globally, logs default to `~/.local/state/xfyun-coding-proxy/logs/`.
+- 新增配置发现链：按 CLI flags → 环境变量 → `$MAAS_CODING_PROXY_CONFIG` → XDG config 目录 → CWD `.env` 顺序查找，全局安装后可将配置文件放到 `~/.config/maas-coding-proxy/config.env`。
+- Added config discovery chain: CLI flags → env vars → `$MAAS_CODING_PROXY_CONFIG` → XDG config dir → CWD `.env`. Global install users can place config at `~/.config/maas-coding-proxy/config.env`.
+- 新增 `XFYUN_LOG_DIR` 环境变量支持，全局安装时默认日志写入 `~/.local/state/maas-coding-proxy/logs/`。
+- Added `XFYUN_LOG_DIR` env var support; when installed globally, logs default to `~/.local/state/maas-coding-proxy/logs/`.
 - 新增 `src/server.ts`，导出 `createServer()` / `startServer()`，便于测试和后续库化集成。
 - Added `src/server.ts` exporting `createServer()` / `startServer()` for easier testing and future library-mode integration.
 

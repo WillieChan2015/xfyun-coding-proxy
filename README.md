@@ -1,4 +1,4 @@
-# xfyun-coding-proxy
+# maas-coding-proxy
 
 [中文](./docs/README.zh-CN.md)
 
@@ -74,29 +74,29 @@ By default, the proxy listens on `127.0.0.1:3000` and exposes an OpenAI-compatib
 Install globally via npm (no Bun required):
 
 ```bash
-npm i -g xfyun-coding-proxy
+npm i -g maas-coding-proxy
 ```
 
 Create a configuration file:
 
 ```bash
-mkdir -p ~/.config/xfyun-coding-proxy
-cp .env.example ~/.config/xfyun-coding-proxy/config.env
+mkdir -p ~/.config/maas-coding-proxy
+cp .env.example ~/.config/maas-coding-proxy/config.env
 # Edit config.env and fill in XFYUN_API_KEY
 ```
 
 Run the proxy:
 
 ```bash
-xfyun-coding-proxy start
+maas-coding-proxy start
 # or with inline options
-xfyun-coding-proxy start --api-key sk-xxx --port 3000
+maas-coding-proxy start --api-key sk-xxx --port 3000
 ```
 
 Or use npx without installing:
 
 ```bash
-npx xfyun-coding-proxy start --api-key sk-xxx
+npx maas-coding-proxy start --api-key sk-xxx
 ```
 
 ## Development
@@ -151,7 +151,7 @@ Via `.env` file or environment variables:
 | `MAX_RETRIES` | `3` | Max retry attempts |
 | `RETRY_DELAY_MS` | `1000` | Initial retry delay (ms) |
 | `XFYUN_LOG_DIR` | XDG state dir | Log output directory |
-| `XFYUN_CODING_PROXY_CONFIG` | — | Path to a custom config file |
+| `MAAS_CODING_PROXY_CONFIG` | — | Path to a custom config file |
 
 ### CLI Options
 
@@ -174,8 +174,8 @@ Configuration values are resolved with the following priority (highest first):
 
 1. CLI flags (`--api-key`, `--port`, etc.)
 2. Environment variables (`XFYUN_API_KEY`, `PORT`, etc.)
-3. Config file specified by `--config` or `$XFYUN_CODING_PROXY_CONFIG`
-4. `$XDG_CONFIG_HOME/xfyun-coding-proxy/config.env` (default: `~/.config/xfyun-coding-proxy/config.env`)
+3. Config file specified by `--config` or `$MAAS_CODING_PROXY_CONFIG`
+4. `$XDG_CONFIG_HOME/maas-coding-proxy/config.env` (default: `~/.config/maas-coding-proxy/config.env`, legacy `~/.config/xfyun-coding-proxy/config.env` is still supported)
 5. `.env` in the current working directory
 
 ## Client Configuration
@@ -240,7 +240,7 @@ src/
 - **Console**: One-line readable format via `@fastify/one-line-logger`
 - **File**: Written to `<logDir>/proxy.log` via `pino-roll`, daily rotation, also rotates at 50MB, keeps last 7 files
   - Dev mode default: `./logs/proxy.log` (set `XFYUN_LOG_DIR=./logs` in `.env`)
-  - Global install default: `~/.local/state/xfyun-coding-proxy/logs/proxy.log`
+  - Global install default: `~/.local/state/maas-coding-proxy/logs/proxy.log`
 
 ## Health Check
 

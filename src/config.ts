@@ -29,17 +29,23 @@ export let config: ResolvedConfig = {
 
 /**
  * 按优先级查找配置文件：
- * 1. --config CLI flag / $XFYUN_CODING_PROXY_CONFIG
- * 2. $XDG_CONFIG_HOME/xfyun-coding-proxy/config.env
+ * 1. --config CLI flag / $MAAS_CODING_PROXY_CONFIG
+ * 2. $XDG_CONFIG_HOME/maas-coding-proxy/config.env（兼容旧目录 ~/.config/xfyun-coding-proxy/config.env）
  * 3. CWD 下的 .env
  */
 export function resolveEnvFile(configPath?: string): string | undefined {
-  const explicit = configPath || process.env.XFYUN_CODING_PROXY_CONFIG;
+  const explicit = configPath || process.env.MAAS_CODING_PROXY_CONFIG;
   if (explicit && existsSync(explicit)) return resolve(explicit);
 
   const xdgHome = process.env.XDG_CONFIG_HOME || join(homedir(), '.config');
-  const xdgPath = join(xdgHome, 'xfyun-coding-proxy', 'config.env');
-  if (existsSync(xdgPath)) return xdgPath;
+  const xdgPaths = [
+    join(xdgHome, 'maas-coding-proxy', 'config.env'),
+    // 兼容旧包名对应的全局配置目录，避免改名后要求用户立即迁移本地配置文件。
+    join(xdgHome, 'xfyun-coding-proxy', 'config.env'),
+  ];
+  for (const xdgPath of xdgPaths) {
+    if (existsSync(xdgPath)) return xdgPath;
+  }
 
   const cwdEnv = join(process.cwd(), '.env');
   if (existsSync(cwdEnv)) return cwdEnv;
@@ -51,7 +57,7 @@ export function resolveEnvFile(configPath?: string): string | undefined {
  * 按优先级确定日志目录：
  * 1. --log-dir CLI flag
  * 2. $XFYUN_LOG_DIR 环境变量
- * 3. $XDG_STATE_HOME/xfyun-coding-proxy/logs（回退 ~/.local/state/xfyun-coding-proxy/logs）
+ * 3. $XDG_STATE_HOME/maas-coding-proxy/logs（回退 ~/.local/state/maas-coding-proxy/logs）
  */
 function resolveLogDir(cliLogDir?: string): string {
   if (cliLogDir) return resolve(cliLogDir);
@@ -60,7 +66,7 @@ function resolveLogDir(cliLogDir?: string): string {
   if (envLogDir) return resolve(envLogDir);
 
   const xdgState = process.env.XDG_STATE_HOME || join(homedir(), '.local', 'state');
-  return join(xdgState, 'xfyun-coding-proxy', 'logs');
+  return join(xdgState, 'maas-coding-proxy', 'logs');
 }
 
 /**
