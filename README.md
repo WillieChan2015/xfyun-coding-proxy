@@ -69,6 +69,36 @@ pnpm dev
 
 By default, the proxy listens on `127.0.0.1:3000` and exposes an OpenAI-compatible base URL at `http://127.0.0.1:3000/v1`.
 
+## Global Install
+
+Install globally via npm (no Bun required):
+
+```bash
+npm i -g xfyun-coding-proxy
+```
+
+Create a configuration file:
+
+```bash
+mkdir -p ~/.config/xfyun-coding-proxy
+cp .env.example ~/.config/xfyun-coding-proxy/config.env
+# Edit config.env and fill in XFYUN_API_KEY
+```
+
+Run the proxy:
+
+```bash
+xfyun-coding-proxy start
+# or with inline options
+xfyun-coding-proxy start --api-key sk-xxx --port 3000
+```
+
+Or use npx without installing:
+
+```bash
+npx xfyun-coding-proxy start --api-key sk-xxx
+```
+
 ## Development
 
 Source development requires Bun because the local start, watch, and test scripts all call Bun directly. Keep Node.js 20+ available as the supported runtime target for `pnpm build`, package verification, and running compiled `dist/` output.
@@ -82,6 +112,33 @@ pnpm format       # Format code
 pnpm build        # Compile TypeScript to dist/
 ```
 
+## Release Automation
+
+This repository uses a tag-driven GitHub Actions workflow to keep npm publishes and GitHub Releases in sync.
+
+1. Add an `NPM_TOKEN` repository secret in GitHub Actions settings.
+2. Keep the current `## [Unreleased]` notes up to date in `CHANGELOG.md` (or add the target version heading manually if you prefer).
+3. Preview the release with `pnpm release:auto:dry-run <version-or-bump>` (or `pnpm release:dry-run <version-or-bump>` if you only want the changelog preview).
+4. Run `pnpm release:auto <version-or-bump> --yes` to automatically run tests, build, version bump, changelog promotion, local release commit creation, tag creation, and post-prepare verification.
+5. Add `--push --yes` if you also want the script to push the release commit and tag for you.
+
+After the tag is pushed, GitHub Actions will install dependencies, extract the matching version section from `CHANGELOG.md`, run the package's `prepublishOnly` checks (`pnpm test && pnpm build`), publish to npm, and then create the matching GitHub Release. Tags containing `-` are automatically marked as GitHub prereleases.
+
+The GitHub Release body is sourced from the `CHANGELOG.md` section that matches the pushed tag. `pnpm release:prepare` and `pnpm release:auto` will create that version heading from `## [Unreleased]` when it does not already exist.
+
+For local preparation, the repository provides five helper commands:
+
+- `pnpm release:check` — verifies that `CHANGELOG.md` contains the heading for the current `package.json` version.
+- `pnpm release:auto:dry-run patch` — previews the resolved version, planned checks, changelog migration, release notes source, and blockers without mutating the repository.
+- `pnpm release:auto patch --yes` — runs the local automation workflow end to end: `pnpm test`, `pnpm build`, version bump, changelog preparation, release commit + tag creation, changelog verification, and `git diff --check`.
+- `pnpm release:auto 0.0.2 --push --yes` — does the same local workflow and then runs `git push` plus `git push --tags`.
+- `pnpm release:dry-run 0.0.2` — previews the target version, tag, changelog migration, release notes source, and blockers without mutating the repository.
+- `pnpm release:prepare 0.0.2` — bumps the version, promotes the current `Unreleased` notes into `## [0.0.2] - YYYY-MM-DD` when needed, restores `## [Unreleased]` to the standard `Added / Changed / Fixed` template, validates `CHANGELOG.md`, creates a local `chore: release v0.0.2` commit, and creates the local tag `v0.0.2`.
+
+`pnpm release:prepare` still does not push anything automatically; `pnpm release:auto` only pushes when you opt in with `--push`.
+
+If you want the Release to be created automatically, publish through the tag workflow instead of running a local `npm publish` by itself.
+
 ## Configuration
 
 Via `.env` file or environment variables:
@@ -93,6 +150,8 @@ Via `.env` file or environment variables:
 | `XFYUN_BASE_URL` | `https://maas-coding-api.cn-huabei-1.xf-yun.com/v2` | iFlytek API Base URL |
 | `MAX_RETRIES` | `3` | Max retry attempts |
 | `RETRY_DELAY_MS` | `1000` | Initial retry delay (ms) |
+| `XFYUN_LOG_DIR` | XDG state dir | Log output directory |
+| `XFYUN_CODING_PROXY_CONFIG` | — | Path to a custom config file |
 
 ### CLI Options
 
@@ -105,7 +164,19 @@ You can also configure the proxy via CLI flags:
 | `--base-url <url>` | iFlytek API base URL | `https://maas-coding-api.cn-huabei-1.xf-yun.com/v2` |
 | `--max-retries <n>` | Max retry attempts | `3` |
 | `--retry-delay <ms>` | Initial retry delay in milliseconds | `1000` |
+| `--log-dir <dir>` | Log output directory | XDG state dir |
+| `-c, --config <path>` | Path to config file | auto-detected |
 | `-v, --verbose` | Enable debug logging | `false` |
+
+### Configuration Lookup Order
+
+Configuration values are resolved with the following priority (highest first):
+
+1. CLI flags (`--api-key`, `--port`, etc.)
+2. Environment variables (`XFYUN_API_KEY`, `PORT`, etc.)
+3. Config file specified by `--config` or `$XFYUN_CODING_PROXY_CONFIG`
+4. `$XDG_CONFIG_HOME/xfyun-coding-proxy/config.env` (default: `~/.config/xfyun-coding-proxy/config.env`)
+5. `.env` in the current working directory
 
 ## Client Configuration
 
@@ -155,10 +226,11 @@ This proxy also includes Trae-specific compatibility handling:
 
 ```
 src/
-├── index.ts    # Entry point, Fastify server, graceful shutdown
+├── index.ts    # CLI entry point (bin)
+├── server.ts   # Fastify server creation + startup + graceful shutdown
 ├── proxy.ts    # Core proxy: forwarding + streaming + retry + SSE filter
-├── cli.ts      # CLI argument parsing (commander)
-├── config.ts   # Config: CLI args + env vars + validation
+├── cli.ts      # CLI argument parsing (commander subcommands)
+├── config.ts   # Config: CLI args + env vars + config discovery + validation
 ├── stats.ts    # Session statistics tracking + exit summary
 └── util.ts     # Token usage extraction + formatting
 ```
@@ -166,7 +238,9 @@ src/
 ## Logging
 
 - **Console**: One-line readable format via `@fastify/one-line-logger`
-- **File**: Written to `./logs/proxy.log` via `pino-roll`, daily rotation, also rotates at 50MB, keeps last 7 files
+- **File**: Written to `<logDir>/proxy.log` via `pino-roll`, daily rotation, also rotates at 50MB, keeps last 7 files
+  - Dev mode default: `./logs/proxy.log` (set `XFYUN_LOG_DIR=./logs` in `.env`)
+  - Global install default: `~/.local/state/xfyun-coding-proxy/logs/proxy.log`
 
 ## Health Check
 

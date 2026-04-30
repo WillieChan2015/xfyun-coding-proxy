@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "type": "command",
+        "command": "node .github/scripts/release-guard-hook.mjs",
+        "timeout": 10
+      }
+    ]
+  }
+}

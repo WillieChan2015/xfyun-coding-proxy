@@ -14,6 +14,7 @@ logs/
 
 # Local secrets
 .env
+.npmrc
 
 # Local AI instructions and private docs (kept on developer machines, not committed)
 .github/copilot-instructions.md

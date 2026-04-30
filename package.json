@@ -10,9 +10,14 @@
   "files": [
     "dist/",
     ".env.example",
+    "README.md",
     "CHANGELOG.md",
     "docs/README.zh-CN.md"
   ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "engines": {
     "node": ">=20"
   },
@@ -25,7 +30,13 @@
     "start": "bun src/index.ts",
     "dev": "bun --watch src/index.ts",
     "build": "tsc",
-    "prepublishOnly": "pnpm test && pnpm build",
+    "prepack": "chmod +x dist/index.js",
+    "prepublishOnly": "pnpm release:check && pnpm test && pnpm build",
+    "release:auto": "node .github/scripts/release-auto.mjs",
+    "release:auto:dry-run": "node .github/scripts/release-auto.mjs --dry-run",
+    "release:check": "node .github/scripts/verify-changelog-version.mjs",
+    "release:dry-run": "node .github/scripts/release-dry-run.mjs",
+    "release:prepare": "node .github/scripts/prepare-release.mjs",
     "test": "bun test",
     "test:watch": "bun test --watch",
     "test:coverage": "bun test --coverage",
@@ -51,7 +62,6 @@
   "dependencies": {
     "@fastify/cors": "^11.0.1",
     "@fastify/one-line-logger": "^2.1.0",
-    "bun": "^1.3.13",
     "commander": "^14.0.3",
     "dotenv": "^16.5.0",
     "fastify": "^5.3.2",
@@ -61,6 +71,7 @@
     "@eslint/js": "^10.0.1",
     "@types/bun": "^1.3.13",
     "@types/node": "^20",
+    "bun": "^1.3.13",
     "eslint": "^10.2.1",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.8.3",

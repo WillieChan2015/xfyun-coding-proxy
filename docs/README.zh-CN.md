@@ -69,6 +69,36 @@ pnpm dev
 
 默认监听地址为 `127.0.0.1:3000`，对外提供的 OpenAI 兼容 Base URL 为 `http://127.0.0.1:3000/v1`。
 
+## 全局安装
+
+通过 npm 全局安装（无需 Bun）：
+
+```bash
+npm i -g xfyun-coding-proxy
+```
+
+创建配置文件：
+
+```bash
+mkdir -p ~/.config/xfyun-coding-proxy
+cp .env.example ~/.config/xfyun-coding-proxy/config.env
+# 编辑 config.env，填入 XFYUN_API_KEY
+```
+
+启动代理：
+
+```bash
+xfyun-coding-proxy start
+# 或使用内联参数
+xfyun-coding-proxy start --api-key sk-xxx --port 3000
+```
+
+免安装运行：
+
+```bash
+npx xfyun-coding-proxy start --api-key sk-xxx
+```
+
 ## 开发
 
 源码开发依赖 Bun，因为本地启动和 watch 脚本都会直接调用 Bun。与此同时，建议保留 Node.js 20+ 作为 `pnpm build`、发布校验以及运行 `dist/` 编译产物时的目标运行时。
@@ -82,6 +112,33 @@ pnpm format       # 代码格式化
 pnpm build        # 编译 TypeScript 到 dist/
 ```
 
+## Release 自动化
+
+仓库现在采用 **tag 驱动** 的 GitHub Actions 工作流，把 npm 发布和 GitHub Release 串成同一条流水线。
+
+1. 在 GitHub 仓库的 Actions Secrets 中添加 `NPM_TOKEN`。
+2. 持续维护 `CHANGELOG.md` 里的 `## [Unreleased]` 内容（如果你更喜欢手工建版本标题，也仍然兼容）。
+3. 先执行 `pnpm release:auto:dry-run <version-or-bump>` 预演（如果你只想看 changelog 预演，也可以继续使用 `pnpm release:dry-run <version-or-bump>`）。
+4. 执行 `pnpm release:auto <version-or-bump> --yes`，自动串起测试、构建、版本升级、changelog 搬运、本地 release commit 创建、本地 tag 创建与后置校验。
+5. 如果还想自动推送，再加上 `--push --yes`。
+
+tag 推送后，GitHub Actions 会自动安装依赖、从 `CHANGELOG.md` 中提取与版本匹配的章节、执行包内的 `prepublishOnly` 校验（`pnpm test && pnpm build`）、发布到 npm，然后再创建同名 GitHub Release。带 `-` 的版本 tag 会自动标记为 GitHub 预发布版本（prerelease）。
+
+GitHub Release 正文直接来自 `CHANGELOG.md` 中与 tag 对应的版本段落；如果目标版本标题还不存在，`pnpm release:prepare` 与 `pnpm release:auto` 都会自动从 `## [Unreleased]` 生成对应章节。
+
+仓库还提供五个本地辅助命令：
+
+- `pnpm release:check`：校验当前 `package.json` 版本在 `CHANGELOG.md` 中是否存在对应标题。
+- `pnpm release:auto:dry-run patch`：只读预演完整本地自动化流程，输出目标版本、预计 tag、计划执行的检查项、changelog 迁移结果、release notes 来源与阻塞项。
+- `pnpm release:auto patch --yes`：自动执行 `pnpm test`、`pnpm build`、版本升级、changelog 搬运、release commit + tag 创建、`pnpm release:check` 与 `git diff --check`。
+- `pnpm release:auto 0.0.2 --push --yes`：在完成上述本地流程后，再自动执行 `git push` 和 `git push --tags`。
+- `pnpm release:dry-run 0.0.2`：只读预览目标版本、预计 tag、changelog 迁移结果、release notes 来源和阻塞项，不会改动仓库状态。
+- `pnpm release:prepare 0.0.2`：升级版本号，必要时把当前 `Unreleased` 内容搬运到 `## [0.0.2] - YYYY-MM-DD`，并把 `## [Unreleased]` 重建为标准的 `Added / Changed / Fixed` 模板，然后校验 changelog、创建本地 `chore: release v0.0.2` commit，并生成本地 tag `v0.0.2`。
+
+`pnpm release:prepare` 依然不会自动执行 push；`pnpm release:auto` 只有在你显式传入 `--push` 时才会自动推送。
+
+如果你希望 GitHub Release 自动生成，就不要只在本地单独执行 `npm publish`，而是通过这条 tag 工作流来发布。
+
 ## 配置
 
 通过 `.env` 文件或环境变量配置：
@@ -93,6 +150,8 @@ pnpm build        # 编译 TypeScript 到 dist/
 | `XFYUN_BASE_URL` | `https://maas-coding-api.cn-huabei-1.xf-yun.com/v2` | 讯飞 API Base URL |
 | `MAX_RETRIES` | `3` | 最大重试次数 |
 | `RETRY_DELAY_MS` | `1000` | 初始重试延迟（ms） |
+| `XFYUN_LOG_DIR` | XDG state 目录 | 日志输出目录 |
+| `XFYUN_CODING_PROXY_CONFIG` | — | 自定义配置文件路径 |
 
 ### CLI 参数
 
@@ -105,7 +164,19 @@ pnpm build        # 编译 TypeScript 到 dist/
 | `--base-url <url>` | 讯飞 API Base URL | `https://maas-coding-api.cn-huabei-1.xf-yun.com/v2` |
 | `--max-retries <n>` | 最大重试次数 | `3` |
 | `--retry-delay <ms>` | 初始重试延迟（毫秒） | `1000` |
+| `--log-dir <dir>` | 日志输出目录 | XDG state 目录 |
+| `-c, --config <path>` | 配置文件路径 | 自动检测 |
 | `-v, --verbose` | 启用调试日志 | `false` |
+
+### 配置查找顺序
+
+配置值按以下优先级解析（从高到低）：
+
+1. CLI 参数（`--api-key`、`--port` 等）
+2. 环境变量（`XFYUN_API_KEY`、`PORT` 等）
+3. `--config` 或 `$XFYUN_CODING_PROXY_CONFIG` 指定的配置文件
+4. `$XDG_CONFIG_HOME/xfyun-coding-proxy/config.env`（默认 `~/.config/xfyun-coding-proxy/config.env`）
+5. 当前工作目录下的 `.env`
 
 ## 客户端配置
 
@@ -155,10 +226,11 @@ Override OpenAI Base URL 设为 `http://localhost:3000/v1`。
 
 ```
 src/
-├── index.ts    # 入口、Fastify 服务器、优雅关停
+├── index.ts    # CLI 入口（bin）
+├── server.ts   # Fastify 服务器创建 + 启动 + 优雅关停
 ├── proxy.ts    # 代理核心：转发 + 流式 + 重试 + SSE 过滤
-├── cli.ts      # CLI 参数解析（commander）
-├── config.ts   # 配置：CLI 参数 + 环境变量 + 校验
+├── cli.ts      # CLI 参数解析（commander 子命令）
+├── config.ts   # 配置：CLI 参数 + 环境变量 + 配置发现链 + 校验
 ├── stats.ts    # 会话统计追踪 + 退出摘要
 └── util.ts     # token 用量提取 + 格式化
 ```
@@ -166,7 +238,9 @@ src/
 ## 日志
 
 - **控制台**：通过 `@fastify/one-line-logger` 输出单行可读格式
-- **文件**：通过 `pino-roll` 写入 `./logs/proxy.log`，按天轮转，单文件超 50MB 也会轮转，保留最近 7 个文件
+- **文件**：通过 `pino-roll` 写入 `<logDir>/proxy.log`，按天轮转，单文件超 50MB 也会轮转，保留最近 7 个文件
+  - 开发模式默认：`./logs/proxy.log`（在 `.env` 中设置 `XFYUN_LOG_DIR=./logs`）
+  - 全局安装默认：`~/.local/state/xfyun-coding-proxy/logs/proxy.log`
 
 ## 健康检查
 
