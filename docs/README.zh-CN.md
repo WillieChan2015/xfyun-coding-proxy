@@ -2,12 +2,18 @@
 
 [English](../README.md)
 
-本地代理服务，将 OpenAI 协议格式的请求转发到讯飞星辰 Coding Plan API，供 OpenCode / Cursor 等编程工具使用。
+本地代理服务，将 OpenAI 协议格式的请求转发到讯飞星辰 Coding Plan API，供 OpenCode / Cursor / Trae 等编程工具使用。
+
+> **当前版本：** `0.0.1-alpha`
+>
+> 当前项目处于 alpha 预览阶段，接口、配置和行为在首个稳定版本前仍可能发生调整。
+>
+> 版本变更记录见 [`../CHANGELOG.md`](../CHANGELOG.md)。
 
 ## 工作原理
 
 ```
-OpenCode / Cursor / 其他工具
+OpenCode / Cursor / Trae / 其他工具
         ↓  http://localhost:3000/v1/chat/completions
    ┌─────────────────────────┐
    │   Fastify 代理服务       │
@@ -48,6 +54,8 @@ pnpm start
 pnpm dev
 ```
 
+默认监听地址为 `127.0.0.1:3000`，对外提供的 OpenAI 兼容 Base URL 为 `http://127.0.0.1:3000/v1`。
+
 ## 开发
 
 ```bash
@@ -71,6 +79,19 @@ pnpm build        # 编译 TypeScript 到 dist/
 | `MAX_RETRIES` | `3` | 最大重试次数 |
 | `RETRY_DELAY_MS` | `1000` | 初始重试延迟（ms） |
 
+### CLI 参数
+
+也可以通过命令行参数配置代理：
+
+| 参数 | 说明 | 默认值 |
+|---|---|---|
+| `-p, --port <port>` | 代理服务监听端口 | `3000` |
+| `-k, --api-key <key>` | 讯飞 Coding Plan API Key | 无 |
+| `--base-url <url>` | 讯飞 API Base URL | `https://maas-coding-api.cn-huabei-1.xf-yun.com/v2` |
+| `--max-retries <n>` | 最大重试次数 | `3` |
+| `--retry-delay <ms>` | 初始重试延迟（毫秒） | `1000` |
+| `-v, --verbose` | 启用调试日志 | `false` |
+
 ## 客户端配置
 
 ### OpenCode
@@ -93,6 +114,26 @@ pnpm build        # 编译 TypeScript 到 dist/
 ### Cursor
 
 Override OpenAI Base URL 设为 `http://localhost:3000/v1`。
+
+### Trae
+
+在 Trae 中添加自定义 OpenAI 兼容 provider 时：
+
+- 自定义 URL 设为 `http://localhost:3000/v1/chat/completions`；
+- API Key 可填写任意占位值，例如 `local-proxy`；
+- 如果 Trae 要求填写模型名，可保留任意占位值，代理在转发前会统一覆盖为 `astron-code-latest`。
+
+这个代理还额外处理了与 Trae 相关的兼容问题：
+
+- 过滤 `progress_notice`、`context_usage` 等非标准 SSE 事件，避免流式解析报错；
+- 丢弃可能被讯飞上游拒绝的非标准请求头。
+
+## 兼容性说明
+
+- 代理默认仅监听 `127.0.0.1`，面向本地使用场景。
+- 客户端传入的模型名会在转发前统一覆盖为 `astron-code-latest`。
+- 类似 `"true"` 的字符串型 `stream` 参数会被规范化为布尔值 `true`。
+- 错误响应会尽量保持 OpenAI 风格的 `{ error: { message, type, code } }` 结构。
 
 ## 项目结构
 

@@ -15,7 +15,7 @@ export function parseCli(): CliOptions {
   program
     .name('xfyun-coding-proxy')
     .description('Local proxy for iFlytek Xingchen Coding Plan API (OpenAI-compatible)')
-    .version('1.0.0')
+    .version('0.0.1-alpha')
     .option('-p, --port <port>', 'proxy listen port', process.env.PORT || '3000')
     .option('-k, --api-key <key>', 'iFlytek Coding Plan API key')
     .option(
