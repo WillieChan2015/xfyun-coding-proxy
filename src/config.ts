@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
+import { createInterface } from 'node:readline/promises';
 import dotenv from 'dotenv';
 import { CliOptions } from './cli';
 
@@ -95,4 +96,27 @@ export function validateConfig(cfg?: ResolvedConfig): void {
       'XFYUN_API_KEY is required. Set it via --api-key, .env, or environment variable.',
     );
   }
+}
+
+/**
+ * 交互式补全缺失的必填配置项
+ * 当 apiKey 为空且 stdin 是 TTY 时，提示用户输入；非 TTY 环境直接跳过（由 validateConfig 报错）
+ */
+export async function promptMissingConfig(cfg: ResolvedConfig): Promise<ResolvedConfig> {
+  if (cfg.apiKey || !process.stdin.isTTY) return cfg;
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const key = await rl.question(
+      'XFYUN_API_KEY not found. Please enter your iFlytek Coding Plan API Key: ',
+    );
+    const trimmed = key.trim();
+    if (trimmed) {
+      cfg.apiKey = trimmed;
+      config = cfg;
+    }
+  } finally {
+    rl.close();
+  }
+  return cfg;
 }
