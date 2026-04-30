@@ -8,14 +8,17 @@
     "xfyun-coding-proxy": "dist/index.js"
   },
   "files": [
-    "dist/"
+    "dist/",
+    ".env.example",
+    "CHANGELOG.md",
+    "docs/README.zh-CN.md"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=20"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/user/xfyun-coding-proxy.git"
+    "url": "https://github.com/WillieChan2015/xfyun-coding-proxy.git"
   },
   "author": "Willie",
   "scripts": {
@@ -34,6 +37,13 @@
   "keywords": [
     "proxy",
     "xfyun",
+    "xf",
+    "xunfei",
+    "讯飞",
+    "MaaS",
+    "Astron",
+    "astroncodingplan",
+    "astron-coding-plan",
     "coding-plan",
     "openai-compatible"
   ],

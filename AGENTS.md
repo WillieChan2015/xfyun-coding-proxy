@@ -12,8 +12,8 @@
 ## 项目定位
 
 - 这是一个本地 Fastify 代理：将 OpenAI 兼容请求转发到讯飞星辰 Coding Plan API。
-- 开发态使用 Bun 直接运行 TypeScript：`pnpm start` / `pnpm dev`。
-- 发布态面向 Node.js `>=22`，通过 `pnpm build` 输出到 `dist/`。
+- 从源码仓库开发 / 调试时需要 Bun；`pnpm start` / `pnpm dev` 会直接调用 Bun 运行 TypeScript。
+- 发布态与编译产物运行面向 Node.js `>=20`；`pnpm build` 输出的 `dist/` 默认由 Node 执行。
 - 当前关键路由是 `POST /v1/*`（代理）和 `GET /health`（健康检查）。
 - 服务默认监听 `127.0.0.1`；除非需求明确，不要随意放宽监听地址。
 
@@ -29,12 +29,12 @@
 
 ## 常用命令
 
-- `pnpm dev`：热重载开发。
-- `pnpm start`：启动本地代理。
+- `pnpm dev`：热重载开发（源码运行，需要 Bun）。
+- `pnpm start`：启动本地代理（源码运行，需要 Bun）。
 - `pnpm test`：运行测试。
 - `pnpm test:coverage`：查看覆盖率。
 - `pnpm lint`：运行 ESLint。
-- `pnpm build`：编译到 `dist/`。
+- `pnpm build`：编译到 `dist/`（产物面向 Node.js `>=20`）。
 
 ## 改动守则
 

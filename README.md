@@ -37,7 +37,18 @@ OpenCode / Cursor / Trae / Other tools
 - **Auto Retry** — Exponential backoff on HTTP 429/503 and iFlytek business error code 10012
 - **Logging** — Console (one-line readable) + daily-rotating local files (7-day retention)
 
+## Runtime Requirements
+
+Choose the workflow that matches how you use the project:
+
+| Scenario | Required runtime | Why |
+|---|---|---|
+| Develop from this source repository | **Bun** + **Node.js 20+** | `pnpm start` and `pnpm dev` invoke Bun directly; Node.js 20+ is the supported target for build, packaging, and the compiled output in `dist/`. |
+| Run the built output or published package | **Node.js 20+** | The distributable entrypoint is `dist/index.js`, so Bun is not required once you are no longer running from source. |
+
 ## Quick Start
+
+The steps below assume you are working from a source checkout and already have Bun installed.
 
 ```bash
 # Install dependencies
@@ -57,6 +68,8 @@ pnpm dev
 By default, the proxy listens on `127.0.0.1:3000` and exposes an OpenAI-compatible base URL at `http://127.0.0.1:3000/v1`.
 
 ## Development
+
+Source development requires Bun because the local start and watch scripts call Bun directly. Keep Node.js 20+ available as the supported runtime target for `pnpm build`, package verification, and running compiled `dist/` output.
 
 ```bash
 pnpm dev          # Start with hot reload
@@ -131,6 +144,7 @@ This proxy also includes Trae-specific compatibility handling:
 ## Compatibility Notes
 
 - The proxy listens on `127.0.0.1` by default and is intended for local use.
+- Source checkout workflows use Bun for local development scripts; compiled `dist/` output and published packages target Node.js `>=20`.
 - Incoming model values are overridden to `astron-code-latest` before forwarding upstream.
 - String stream flags such as `"true"` are normalized to boolean `true` for upstream compatibility.
 - Error responses are returned in an OpenAI-style `{ error: { message, type, code } }` structure.
