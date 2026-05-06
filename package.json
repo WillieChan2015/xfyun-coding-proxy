@@ -59,7 +59,10 @@
     "astroncodingplan",
     "astron-coding-plan",
     "coding-plan",
-    "openai-compatible"
+    "openai-compatible",
+    "星辰",
+    "讯飞星辰",
+    "xingchen"
   ],
   "license": "MIT",
   "dependencies": {

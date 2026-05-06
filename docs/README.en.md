@@ -1,10 +1,12 @@
 # maas-coding-proxy
 
+[![npm](https://img.shields.io/npm/v/maas-coding-proxy.svg)](https://www.npmjs.com/package/maas-coding-proxy) [![npm](https://img.shields.io/npm/dm/maas-coding-proxy.svg)](https://www.npmjs.com/package/maas-coding-proxy)
+
 [中文](../README.md)
 
 A local proxy that forwards OpenAI-compatible API requests to iFlytek Xingchen Coding Plan API, for use with OpenCode, Cursor, Trae, and other coding tools.
 
-> **Current version:** `0.0.1-alpha`
+> **Current version:** `0.0.2-alpha`
 >
 > This project is currently in an alpha preview stage, so APIs, configuration, and behavior may still change before the first stable release.
 >
@@ -72,7 +74,7 @@ By default, the proxy listens on `127.0.0.1:3000` and exposes an OpenAI-compatib
 
 ## Global Install
 
-Install globally via npm (no Bun required):
+Install globally via npm (no Bun required): [npm package](https://www.npmjs.com/package/maas-coding-proxy)
 
 ```bash
 npm i -g maas-coding-proxy

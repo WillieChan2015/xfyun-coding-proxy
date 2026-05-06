@@ -51,11 +51,12 @@ user-invocable: true
      - `.github/workflows/publish.yml`
      - `.github/scripts/verify-changelog-version.mjs`
      - `.github/scripts/prepare-release.mjs`
-   - 重点关注：
-     - 当前版本号；
-     - `Unreleased` 是否有真实条目；
-     - 目标版本章节是否已存在；
-     - 发布工作流是否仍按 `v*` tag 触发。
+- 重点关注：
+      - 当前版本号；
+      - `README.md` 和 `docs/README.en.md` 中的版本号是否与 `package.json` 一致；
+      - `Unreleased` 是否有真实条目；
+      - 目标版本章节是否已存在；
+      - 发布工作流是否仍按 `v*` tag 触发。
 
 3. **执行只读校验**
    - 可以运行：
@@ -67,8 +68,9 @@ user-invocable: true
    - 不要运行会写出构建产物或创建 tag/commit 的命令。
 
 4. **识别阻塞项**
-   - 常见阻塞包括：
-     - `CHANGELOG.md` 中缺少当前版本章节；
+- 常见阻塞包括：
+      - `README.md` 或 `docs/README.en.md` 中的版本号与 `package.json` 不一致；
+      - `CHANGELOG.md` 中缺少当前版本章节；
      - `Unreleased` 只有模板，没有真实内容（建议先执行 `/changelog-generator` 补充条目）；
      - git 工作区存在与发布无关的脏改动；
      - 预期目标 tag 已存在；

@@ -1,10 +1,12 @@
 # maas-coding-proxy
 
+[![npm](https://img.shields.io/npm/v/maas-coding-proxy.svg)](https://www.npmjs.com/package/maas-coding-proxy) [![npm](https://img.shields.io/npm/dm/maas-coding-proxy.svg)](https://www.npmjs.com/package/maas-coding-proxy)
+
 [English](./docs/README.en.md)
 
 本地代理服务，将 OpenAI 协议格式的请求转发到讯飞星辰 Coding Plan API，供 OpenCode / Cursor / Trae 等编程工具使用。
 
-> **当前版本：** `0.0.1-alpha`
+> **当前版本：** `0.0.2-alpha`
 >
 > 当前项目处于 alpha 预览阶段，接口、配置和行为在首个稳定版本前仍可能发生调整。
 >
@@ -72,7 +74,7 @@ pnpm dev
 
 ## 全局安装
 
-通过 npm 全局安装（无需 Bun）：
+通过 npm 全局安装（无需 Bun）：[npm 包地址](https://www.npmjs.com/package/maas-coding-proxy)
 
 ```bash
 npm i -g maas-coding-proxy
