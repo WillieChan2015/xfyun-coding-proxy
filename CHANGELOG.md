@@ -12,6 +12,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added / 新增
 
+### Changed / 变更
+
+### Fixed / 修复
+
+## [0.0.3-alpha] - 2026-05-06
+
+### Added / 新增
+
 - 新增每日用量统计：跨会话累计当天请求数、token 消耗、重试与错误数，持久化到 `<logDir>/stats/YYYY-MM-DD.json`，并在启动时自动恢复当天已有数据；退出时 Session Summary 也会展示当天累计值。
 - Added daily usage statistics that persist request count, token usage, retries, and errors across sessions to `<logDir>/stats/YYYY-MM-DD.json`, automatically restore the current day on startup, and show the current day's totals in Session Summary on exit.
 - CLI 新增 `stats` 子命令，支持查看当天用量、指定日期用量以及历史日期列表。
