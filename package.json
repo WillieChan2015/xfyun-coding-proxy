@@ -1,6 +1,6 @@
 {
   "name": "maas-coding-proxy",
-  "version": "0.0.2-alpha",
+  "version": "0.0.3-alpha",
   "description": "Local proxy for iFlytek Xingchen Coding Plan API (OpenAI-compatible)",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
