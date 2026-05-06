@@ -57,13 +57,18 @@ export function resolveEnvFile(configPath?: string): string | undefined {
  * 按优先级确定日志目录：
  * 1. --log-dir CLI flag
  * 2. $XFYUN_LOG_DIR 环境变量
- * 3. $XDG_STATE_HOME/maas-coding-proxy/logs（回退 ~/.local/state/maas-coding-proxy/logs）
+ * 3. CWD 下存在 package.json → ./logs（源码开发调试）
+ * 4. $XDG_STATE_HOME/maas-coding-proxy/logs（回退 ~/.local/state/maas-coding-proxy/logs）
  */
 function resolveLogDir(cliLogDir?: string): string {
   if (cliLogDir) return resolve(cliLogDir);
 
   const envLogDir = process.env.XFYUN_LOG_DIR;
   if (envLogDir) return resolve(envLogDir);
+
+  if (existsSync(join(process.cwd(), 'package.json'))) {
+    return join(process.cwd(), 'logs');
+  }
 
   const xdgState = process.env.XDG_STATE_HOME || join(homedir(), '.local', 'state');
   return join(xdgState, 'maas-coding-proxy', 'logs');

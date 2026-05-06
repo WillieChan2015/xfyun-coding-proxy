@@ -49,9 +49,9 @@
   - `SIGINT` / `SIGTERM` 优雅关停；
   - `127.0.0.1` 监听与 `/health` 路由。
 - 修改配置或新增环境变量时，同步更新 `src/config.ts`、`src/cli.ts`、`.env.example` 与 README 中的配置说明。
-- 涉及用户可见行为、启动方式或配置项时，同步更新 `README.md` 和 `docs/README.zh-CN.md`。
+- 涉及用户可见行为、启动方式或配置项时，同步更新 `README.md` 和 `docs/README.en.md`。
 - 纯文档改动通常无需跑全量校验；代码改动至少运行受影响测试，常见验证顺序是 `pnpm test`，必要时补 `pnpm lint` 与 `pnpm build`。
 
 ## 优先参考公开文档
 
-- 快速使用：[`README.md`](./README.md)、[`docs/README.zh-CN.md`](./docs/README.zh-CN.md)
+- 快速使用：[`README.md`](./README.md)、[`docs/README.en.md`](./docs/README.en.md)

@@ -1,184 +1,184 @@
 # maas-coding-proxy
 
-[中文](./docs/README.zh-CN.md)
+[English](./docs/README.en.md)
 
-A local proxy that forwards OpenAI-compatible API requests to iFlytek Xingchen Coding Plan API, for use with OpenCode, Cursor, Trae, and other coding tools.
+本地代理服务，将 OpenAI 协议格式的请求转发到讯飞星辰 Coding Plan API，供 OpenCode / Cursor / Trae 等编程工具使用。
 
-> **Current version:** `0.0.1-alpha`
+> **当前版本：** `0.0.1-alpha`
 >
-> This project is currently in an alpha preview stage, so APIs, configuration, and behavior may still change before the first stable release.
+> 当前项目处于 alpha 预览阶段，接口、配置和行为在首个稳定版本前仍可能发生调整。
 >
-> See [`CHANGELOG.md`](./CHANGELOG.md) for version history.
+> 版本变更记录见 [`CHANGELOG.md`](./CHANGELOG.md)。
 
-## How It Works
+## 工作原理
 
 ```
-OpenCode / Cursor / Trae / Other tools
+OpenCode / Cursor / Trae / 其他工具
         ↓  http://localhost:3000/v1/chat/completions
    ┌─────────────────────────┐
-   │   Fastify Proxy          │
+   │   Fastify 代理服务       │
    │                         │
-   │  1. API Key injection   │
-   │  2. Request logging     │
-   │  3. Forward to iFlytek  │
-   │  4. SSE stream passthru │
-   │  5. 429/503 auto-retry  │
+   │  1. API Key 注入        │
+   │  2. 请求日志            │
+   │  3. 转发到讯飞           │
+   │  4. SSE 流式透传        │
+   │  5. 429/503 自动重试    │
    └─────────────────────────┘
         ↓  https://maas-coding-api.cn-huabei-1.xf-yun.com/v2/chat/completions
-   iFlytek Xingchen Coding Plan API
+   讯飞星辰 Coding Plan API
 ```
 
-## Features
+## 功能
 
-- **API Key Injection** — Clients don't need the real key; the proxy replaces the `Authorization` header on forwarding
-- **Path Rewriting** — `/v1/` → iFlytek `/v2/` prefix
-- **GET & POST Proxy** — Forwards both `POST /v1/*` (chat completions) and `GET /v1/*` (models listing)
-- **SSE Stream Passthrough** — Real-time streaming with non-standard iFlytek events filtered out (`progress_notice`, `context_usage`)
-- **Field Cleanup** — Automatically removes iFlytek-specific fields like `reasoning_content`, `plugins_content`
-- **Auto Retry** — Exponential backoff on HTTP 429/503 and iFlytek business error codes 10012, 10010, 10006
-- **Logging** — Console (one-line readable) + daily-rotating local files (7-day retention)
-- **Session Summary** — Prints request count, token usage, retries, errors, and uptime on exit
+- **API Key 注入** — 客户端无需持有真实 Key，代理在转发时自动替换 `Authorization` header
+- **路径重写** — `/v1/` → 讯飞 `/v2/` 前缀
+- **GET & POST 代理** — 同时支持 `POST /v1/*`（聊天补全）和 `GET /v1/*`（模型列表）转发
+- **SSE 流式透传** — 实时转发流式响应，过滤讯飞非标准 SSE 事件（`progress_notice`、`context_usage`）
+- **字段清理** — 自动移除 `reasoning_content`、`plugins_content` 等讯飞特有字段
+- **自动重试** — HTTP 429/503 及讯飞业务错误码 10012、10010、10006，指数退避重试
+- **日志** — 控制台单行可读输出 + 本地文件按天轮转（保留 7 天）
+- **会话摘要** — 退出时输出请求数、token 消耗、重试次数、错误数和运行时长
 
-## Runtime Requirements
+## 运行时要求
 
-Choose the workflow that matches how you use the project:
+可根据使用方式选择对应运行时：
 
-| Scenario | Required runtime | Why |
+| 场景 | 所需运行时 | 说明 |
 |---|---|---|
-| Develop from this source repository | **Bun** + **Node.js 20+** | `pnpm start` and `pnpm dev` invoke Bun directly; Node.js 20+ is the supported target for build, packaging, and the compiled output in `dist/`. |
-| Run the built output or published package | **Node.js 20+** | The distributable entrypoint is `dist/index.js`, so Bun is not required once you are no longer running from source. |
+| 从当前源码仓库开发 / 调试 | **Bun** + **Node.js 20+** | `pnpm start` 和 `pnpm dev` 会直接调用 Bun；Node.js 20+ 是 `pnpm build`、打包校验以及 `dist/` 编译产物的受支持目标运行时。 |
+| 运行编译产物或已发布包 | **Node.js 20+** | 可分发入口是 `dist/index.js`，因此脱离源码开发后不再依赖 Bun。 |
 
-## Quick Start
+## 快速开始
 
-The steps below assume you are working from a source checkout and already have Bun installed.
+下面的步骤默认你是在源码仓库中开发，并且已经安装好 Bun。
 
 ```bash
-# Install dependencies
+# 安装依赖
 pnpm install
 
-# Configure environment
+# 配置环境变量
 cp .env.example .env
-# Edit .env and fill in XFYUN_API_KEY
+# 编辑 .env，填入 XFYUN_API_KEY
 
-# Start
+# 启动
 pnpm start
 
-# Dev mode (hot reload)
+# 开发模式（热重载）
 pnpm dev
 ```
 
-By default, the proxy listens on `127.0.0.1:3000` and exposes an OpenAI-compatible base URL at `http://127.0.0.1:3000/v1`.
+默认监听地址为 `127.0.0.1:3000`，对外提供的 OpenAI 兼容 Base URL 为 `http://127.0.0.1:3000/v1`。
 
-## Global Install
+## 全局安装
 
-Install globally via npm (no Bun required):
+通过 npm 全局安装（无需 Bun）：
 
 ```bash
 npm i -g maas-coding-proxy
 ```
 
-Create a configuration file:
+创建配置文件：
 
 ```bash
 mkdir -p ~/.config/maas-coding-proxy
 cp .env.example ~/.config/maas-coding-proxy/config.env
-# Edit config.env and fill in XFYUN_API_KEY
+# 编辑 config.env，填入 XFYUN_API_KEY
 ```
 
-Run the proxy:
+启动代理：
 
 ```bash
 maas-coding-proxy start
-# or with inline options
+# 或使用内联参数
 maas-coding-proxy start --api-key sk-xxx --port 3000
 ```
 
-Or use npx without installing:
+免安装运行：
 
 ```bash
 npx maas-coding-proxy start --api-key sk-xxx
 ```
 
-## Development
+## 开发
 
-Source development requires Bun because the local start, watch, and test scripts all call Bun directly. Keep Node.js 20+ available as the supported runtime target for `pnpm build`, package verification, and running compiled `dist/` output.
+源码开发依赖 Bun，因为本地启动和 watch 脚本都会直接调用 Bun。与此同时，建议保留 Node.js 20+ 作为 `pnpm build`、发布校验以及运行 `dist/` 编译产物时的目标运行时。
 
 ```bash
-pnpm dev          # Start with hot reload
-pnpm test         # Run tests
-pnpm test:watch   # Run tests in watch mode
-pnpm lint         # Lint code
-pnpm format       # Format code
-pnpm build        # Compile TypeScript to dist/
+pnpm dev          # 热重载启动
+pnpm test         # 运行测试
+pnpm test:watch   # 测试 watch 模式
+pnpm lint         # 代码检查
+pnpm format       # 代码格式化
+pnpm build        # 编译 TypeScript 到 dist/
 ```
 
-## Release Automation
+## Release 自动化
 
-This repository uses a tag-driven GitHub Actions workflow to keep npm publishes and GitHub Releases in sync.
+仓库现在采用 **tag 驱动** 的 GitHub Actions 工作流，把 npm 发布和 GitHub Release 串成同一条流水线。
 
-1. Add an `NPM_TOKEN` repository secret in GitHub Actions settings.
-2. Keep the current `## [Unreleased]` notes up to date in `CHANGELOG.md` (or add the target version heading manually if you prefer).
-3. Preview the release with `pnpm release:auto:dry-run <version-or-bump>` (or `pnpm release:dry-run <version-or-bump>` if you only want the changelog preview).
-4. Run `pnpm release:auto <version-or-bump> --yes` to automatically run tests, build, version bump, changelog promotion, local release commit creation, tag creation, and post-prepare verification.
-5. Add `--push --yes` if you also want the script to push the release commit and tag for you.
+1. 在 GitHub 仓库的 Actions Secrets 中添加 `NPM_TOKEN`。
+2. 持续维护 `CHANGELOG.md` 里的 `## [Unreleased]` 内容（如果你更喜欢手工建版本标题，也仍然兼容）。
+3. 先执行 `pnpm release:auto:dry-run <version-or-bump>` 预演（如果你只想看 changelog 预演，也可以继续使用 `pnpm release:dry-run <version-or-bump>`）。
+4. 执行 `pnpm release:auto <version-or-bump> --yes`，自动串起测试、构建、版本升级、changelog 搬运、本地 release commit 创建、本地 tag 创建与后置校验。
+5. 如果还想自动推送，再加上 `--push --yes`。
 
-After the tag is pushed, GitHub Actions will install dependencies, extract the matching version section from `CHANGELOG.md`, run the package's `prepublishOnly` checks (`pnpm test && pnpm build`), publish to npm, and then create the matching GitHub Release. Tags containing `-` are automatically marked as GitHub prereleases.
+tag 推送后，GitHub Actions 会自动安装依赖、从 `CHANGELOG.md` 中提取与版本匹配的章节、执行包内的 `prepublishOnly` 校验（`pnpm test && pnpm build`）、发布到 npm，然后再创建同名 GitHub Release。带 `-` 的版本 tag 会自动标记为 GitHub 预发布版本（prerelease）。
 
-The GitHub Release body is sourced from the `CHANGELOG.md` section that matches the pushed tag. `pnpm release:prepare` and `pnpm release:auto` will create that version heading from `## [Unreleased]` when it does not already exist.
+GitHub Release 正文直接来自 `CHANGELOG.md` 中与 tag 对应的版本段落；如果目标版本标题还不存在，`pnpm release:prepare` 与 `pnpm release:auto` 都会自动从 `## [Unreleased]` 生成对应章节。
 
-For local preparation, the repository provides five helper commands:
+仓库还提供五个本地辅助命令：
 
-- `pnpm release:check` — verifies that `CHANGELOG.md` contains the heading for the current `package.json` version.
-- `pnpm release:auto:dry-run patch` — previews the resolved version, planned checks, changelog migration, release notes source, and blockers without mutating the repository.
-- `pnpm release:auto patch --yes` — runs the local automation workflow end to end: `pnpm test`, `pnpm build`, version bump, changelog preparation, release commit + tag creation, changelog verification, and `git diff --check`.
-- `pnpm release:auto 0.0.2 --push --yes` — does the same local workflow and then runs `git push` plus `git push --tags`.
-- `pnpm release:dry-run 0.0.2` — previews the target version, tag, changelog migration, release notes source, and blockers without mutating the repository.
-- `pnpm release:prepare 0.0.2` — bumps the version, promotes the current `Unreleased` notes into `## [0.0.2] - YYYY-MM-DD` when needed, restores `## [Unreleased]` to the standard `Added / Changed / Fixed` template, validates `CHANGELOG.md`, creates a local `chore: release v0.0.2` commit, and creates the local tag `v0.0.2`.
+- `pnpm release:check`：校验当前 `package.json` 版本在 `CHANGELOG.md` 中是否存在对应标题。
+- `pnpm release:auto:dry-run patch`：只读预演完整本地自动化流程，输出目标版本、预计 tag、计划执行的检查项、changelog 迁移结果、release notes 来源与阻塞项。
+- `pnpm release:auto patch --yes`：自动执行 `pnpm test`、`pnpm build`、版本升级、changelog 搬运、release commit + tag 创建、`pnpm release:check` 与 `git diff --check`。
+- `pnpm release:auto 0.0.2 --push --yes`：在完成上述本地流程后，再自动执行 `git push` 和 `git push --tags`。
+- `pnpm release:dry-run 0.0.2`：只读预览目标版本、预计 tag、changelog 迁移结果、release notes 来源和阻塞项，不会改动仓库状态。
+- `pnpm release:prepare 0.0.2`：升级版本号，必要时把当前 `Unreleased` 内容搬运到 `## [0.0.2] - YYYY-MM-DD`，并把 `## [Unreleased]` 重建为标准的 `Added / Changed / Fixed` 模板，然后校验 changelog、创建本地 `chore: release v0.0.2` commit，并生成本地 tag `v0.0.2`。
 
-`pnpm release:prepare` still does not push anything automatically; `pnpm release:auto` only pushes when you opt in with `--push`.
+`pnpm release:prepare` 依然不会自动执行 push；`pnpm release:auto` 只有在你显式传入 `--push` 时才会自动推送。
 
-If you want the Release to be created automatically, publish through the tag workflow instead of running a local `npm publish` by itself.
+如果你希望 GitHub Release 自动生成，就不要只在本地单独执行 `npm publish`，而是通过这条 tag 工作流来发布。
 
-## Configuration
+## 配置
 
-Via `.env` file or environment variables:
+通过 `.env` 文件或环境变量配置：
 
-| Variable | Default | Description |
+| 变量 | 默认值 | 说明 |
 |---|---|---|
-| `PORT` | `3000` | Proxy listen port |
-| `XFYUN_API_KEY` | Required | iFlytek Coding Plan API Key |
-| `XFYUN_BASE_URL` | `https://maas-coding-api.cn-huabei-1.xf-yun.com/v2` | iFlytek API Base URL |
-| `MAX_RETRIES` | `3` | Max retry attempts |
-| `RETRY_DELAY_MS` | `1000` | Initial retry delay (ms) |
-| `XFYUN_LOG_DIR` | XDG state dir | Log output directory |
-| `MAAS_CODING_PROXY_CONFIG` | — | Path to a custom config file |
+| `PORT` | `3000` | 代理服务监听端口 |
+| `XFYUN_API_KEY` | 必填 | 讯飞 Coding Plan API Key |
+| `XFYUN_BASE_URL` | `https://maas-coding-api.cn-huabei-1.xf-yun.com/v2` | 讯飞 API Base URL |
+| `MAX_RETRIES` | `3` | 最大重试次数 |
+| `RETRY_DELAY_MS` | `1000` | 初始重试延迟（ms） |
+| `XFYUN_LOG_DIR` | XDG state 目录 | 日志输出目录 |
+| `MAAS_CODING_PROXY_CONFIG` | — | 自定义配置文件路径 |
 
-### CLI Options
+### CLI 参数
 
-You can also configure the proxy via CLI flags:
+也可以通过命令行参数配置代理：
 
-| Option | Description | Default |
+| 参数 | 说明 | 默认值 |
 |---|---|---|
-| `-p, --port <port>` | Proxy listen port | `3000` |
-| `-k, --api-key <key>` | iFlytek Coding Plan API key | none |
-| `--base-url <url>` | iFlytek API base URL | `https://maas-coding-api.cn-huabei-1.xf-yun.com/v2` |
-| `--max-retries <n>` | Max retry attempts | `3` |
-| `--retry-delay <ms>` | Initial retry delay in milliseconds | `1000` |
-| `--log-dir <dir>` | Log output directory | XDG state dir |
-| `-c, --config <path>` | Path to config file | auto-detected |
-| `-v, --verbose` | Enable debug logging | `false` |
+| `-p, --port <port>` | 代理服务监听端口 | `3000` |
+| `-k, --api-key <key>` | 讯飞 Coding Plan API Key | 无 |
+| `--base-url <url>` | 讯飞 API Base URL | `https://maas-coding-api.cn-huabei-1.xf-yun.com/v2` |
+| `--max-retries <n>` | 最大重试次数 | `3` |
+| `--retry-delay <ms>` | 初始重试延迟（毫秒） | `1000` |
+| `--log-dir <dir>` | 日志输出目录 | XDG state 目录 |
+| `-c, --config <path>` | 配置文件路径 | 自动检测 |
+| `-v, --verbose` | 启用调试日志 | `false` |
 
-### Configuration Lookup Order
+### 配置查找顺序
 
-Configuration values are resolved with the following priority (highest first):
+配置值按以下优先级解析（从高到低）：
 
-1. CLI flags (`--api-key`, `--port`, etc.)
-2. Environment variables (`XFYUN_API_KEY`, `PORT`, etc.)
-3. Config file specified by `--config` or `$MAAS_CODING_PROXY_CONFIG`
-4. `$XDG_CONFIG_HOME/maas-coding-proxy/config.env` (default: `~/.config/maas-coding-proxy/config.env`, legacy `~/.config/xfyun-coding-proxy/config.env` is still supported)
-5. `.env` in the current working directory
+1. CLI 参数（`--api-key`、`--port` 等）
+2. 环境变量（`XFYUN_API_KEY`、`PORT` 等）
+3. `--config` 或 `$MAAS_CODING_PROXY_CONFIG` 指定的配置文件
+4. `$XDG_CONFIG_HOME/maas-coding-proxy/config.env`（默认 `~/.config/maas-coding-proxy/config.env`，兼容旧目录 `~/.config/xfyun-coding-proxy/config.env`）
+5. 当前工作目录下的 `.env`
 
-## Client Configuration
+## 客户端配置
 
 ### OpenCode
 
@@ -187,7 +187,7 @@ Configuration values are resolved with the following priority (highest first):
   "provider": {
     "AstronCodingPlan": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "iFlytek Xingchen Coding Plan",
+      "name": "讯飞星辰 Coding Plan",
       "options": {
         "baseURL": "http://localhost:3000/v1",
         "apiKey": "local-proxy"
@@ -199,56 +199,56 @@ Configuration values are resolved with the following priority (highest first):
 
 ### Cursor
 
-Set Override OpenAI Base URL to `http://localhost:3000/v1`.
+Override OpenAI Base URL 设为 `http://localhost:3000/v1`。
 
 ### Trae
 
-When adding a custom OpenAI-compatible provider in Trae:
+在 Trae 中添加自定义 OpenAI 兼容 provider 时：
 
-- set Custom URL to `http://127.0.0.1:3000/v1/chat/completions`;
-- use any placeholder API key such as `local-proxy`;
-- if Trae asks for a model name, you can keep a placeholder value — the proxy will override it to `astron-code-latest` before forwarding.
+- 自定义 URL 设为 `http://localhost:3000/v1/chat/completions`；
+- API Key 可填写任意占位值，例如 `local-proxy`；
+- 如果 Trae 要求填写模型名，可保留任意占位值，代理在转发前会统一覆盖为 `astron-code-latest`。
 
-This proxy also includes Trae-specific compatibility handling:
+这个代理还额外处理了与 Trae 相关的兼容问题：
 
-- filters non-standard SSE events such as `progress_notice` and `context_usage` to avoid stream parsing errors;
-- drops non-standard client headers that may be rejected by the upstream iFlytek service.
+- 过滤 `progress_notice`、`context_usage` 等非标准 SSE 事件，避免流式解析报错；
+- 丢弃可能被讯飞上游拒绝的非标准请求头。
 
-## Compatibility Notes
+## 兼容性说明
 
-- The proxy listens on `127.0.0.1` by default and is intended for local use.
-- Source checkout workflows use Bun for local development scripts; compiled `dist/` output and published packages target Node.js `>=20`.
-- Incoming model values are overridden to `astron-code-latest` before forwarding upstream.
-- String stream flags such as `"true"` are normalized to boolean `true` for upstream compatibility.
-- Error responses are returned in an OpenAI-style `{ error: { message, type, code } }` structure.
+- 代理默认仅监听 `127.0.0.1`，面向本地使用场景。
+- 源码仓库的本地开发脚本依赖 Bun，而编译后的 `dist/` 产物与发布包面向 Node.js `>=20`。
+- 客户端传入的模型名会在转发前统一覆盖为 `astron-code-latest`。
+- 类似 `"true"` 的字符串型 `stream` 参数会被规范化为布尔值 `true`。
+- 错误响应会尽量保持 OpenAI 风格的 `{ error: { message, type, code } }` 结构。
 
-## Project Structure
+## 项目结构
 
 ```
 src/
-├── index.ts    # CLI entry point (bin)
-├── server.ts   # Fastify server creation + startup + graceful shutdown
-├── proxy.ts    # Core proxy: forwarding + streaming + retry + SSE filter
-├── cli.ts      # CLI argument parsing (commander subcommands)
-├── config.ts   # Config: CLI args + env vars + config discovery + validation
-├── stats.ts    # Session statistics tracking + exit summary
-└── util.ts     # Token usage extraction + formatting
+├── index.ts    # CLI 入口（bin）
+├── server.ts   # Fastify 服务器创建 + 启动 + 优雅关停
+├── proxy.ts    # 代理核心：转发 + 流式 + 重试 + SSE 过滤
+├── cli.ts      # CLI 参数解析（commander 子命令）
+├── config.ts   # 配置：CLI 参数 + 环境变量 + 配置发现链 + 校验
+├── stats.ts    # 会话统计追踪 + 退出摘要
+└── util.ts     # token 用量提取 + 格式化
 ```
 
-## Logging
+## 日志
 
-- **Console**: One-line readable format via `@fastify/one-line-logger`
-- **File**: Written to `<logDir>/proxy.log` via `pino-roll`, daily rotation, also rotates at 50MB, keeps last 7 files
-  - Dev mode default: `./logs/proxy.log` (set `XFYUN_LOG_DIR=./logs` in `.env`)
-  - Global install default: `~/.local/state/maas-coding-proxy/logs/proxy.log`
+- **控制台**：通过 `@fastify/one-line-logger` 输出单行可读格式
+- **文件**：通过 `pino-roll` 写入 `<logDir>/proxy.log`，按天轮转，单文件超 50MB 也会轮转，保留最近 7 个文件
+  - 开发模式默认：`./logs/proxy.log`（在 `.env` 中设置 `XFYUN_LOG_DIR=./logs`）
+  - 全局安装默认：`~/.local/state/maas-coding-proxy/logs/proxy.log`
 
-## Health Check
+## 健康检查
 
 ```
 GET /health
 ```
 
-Response:
+返回：
 
 ```json
 { "status": "ok", "upstream": "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2" }

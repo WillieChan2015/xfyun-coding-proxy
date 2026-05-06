@@ -26,11 +26,12 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
             level: 'info',
           },
           {
-            target: 'pino-roll',
+            target: './pretty-roll-transport.js',
             level: 'info',
             options: {
               file: path.join(cfg.logDir, 'proxy.log'),
               frequency: 'daily',
+              dateFormat: 'yyyy-MM-dd',
               mkdir: true,
               size: '50m',
               limit: { count: 7 },
@@ -46,7 +47,7 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
   // OpenAI 格式错误响应：客户端（OpenCode/Cursor 等）期望 { error: { message, type, code } } 结构
   server.setErrorHandler((error: FastifyError, request: FastifyRequest, reply: FastifyReply) => {
     const status = error.statusCode || 500;
-    request.log.error({ error: error.message, status }, 'request error');
+    request.log.error(`request error | ${status} | ${error.message}`);
     reply.status(status).send({
       error: {
         message: error.message || 'Internal server error',
@@ -65,7 +66,7 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
 
   server.setNotFoundHandler((request, reply) => {
     // 仅记录 method+url，避免泄露 headers（含 authorization）和 body
-    request.log.warn({ method: request.method, url: request.url }, 'unmatched route');
+    request.log.warn(`unmatched route | ${request.method} ${request.url}`);
     reply.status(404).send({
       error: 'not found',
       method: request.method,
@@ -84,6 +85,7 @@ export async function startServer(server: FastifyInstance, cfg: ResolvedConfig):
   try {
     await server.listen({ port: cfg.port, host: '127.0.0.1' });
     server.log.info(`Forwarding /v1/* → ${cfg.baseUrl}`);
+    server.log.info(`Log dir: ${cfg.logDir}`);
   } catch (err) {
     server.log.error(err);
     process.exit(1);
