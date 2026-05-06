@@ -38,6 +38,7 @@ OpenCode / Cursor / Trae / Other tools
 - **Auto Retry** — Exponential backoff on HTTP 429/503 and iFlytek business error codes 10012, 10010, 10006
 - **Logging** — Console (one-line readable) + daily-rotating local files (7-day retention)
 - **Session Summary** — Prints request count, token usage, retries, errors, and uptime on exit
+- **Daily Statistics** — Aggregates usage across sessions per day, persists to local files, and supports CLI history queries
 
 ## Runtime Requirements
 
@@ -152,6 +153,7 @@ Via `.env` file or environment variables:
 | `RETRY_DELAY_MS` | `1000` | Initial retry delay (ms) |
 | `XFYUN_LOG_DIR` | XDG state dir | Log output directory |
 | `MAAS_CODING_PROXY_CONFIG` | — | Path to a custom config file |
+| `STATS_FLUSH_INTERVAL_MS` | `60000` | Daily stats flush interval (ms), set to `0` to disable |
 
 ### CLI Options
 
@@ -177,6 +179,54 @@ Configuration values are resolved with the following priority (highest first):
 3. Config file specified by `--config` or `$MAAS_CODING_PROXY_CONFIG`
 4. `$XDG_CONFIG_HOME/maas-coding-proxy/config.env` (default: `~/.config/maas-coding-proxy/config.env`, legacy `~/.config/xfyun-coding-proxy/config.env` is still supported)
 5. `.env` in the current working directory
+
+## Usage Statistics
+
+The proxy automatically tracks token usage per request, aggregates it by day, and persists it to `<logDir>/stats/YYYY-MM-DD.json`. The Session Summary printed on exit includes a "Today" line showing the daily cumulative total.
+
+### CLI Queries
+
+```bash
+# Show today's usage
+maas-coding-proxy stats
+
+# Show usage for a specific date
+maas-coding-proxy stats --date 2025-05-05
+maas-coding-proxy stats -d 2025-05-05
+
+# List all dates with recorded stats
+maas-coding-proxy stats --list
+maas-coding-proxy stats -l
+```
+
+### Output Examples
+
+**Today / specific date:**
+
+```
+════════════════════════════════════════════════
+  Daily Stats — 2025-05-06
+════════════════════════════════════════════════
+  Requests:       42
+  Tokens:         23.5k(23500)
+    Input:        15.0k(15000)
+    Output:       8.5k(8500)
+  Retries:        3
+  Errors:         1
+════════════════════════════════════════════════
+```
+
+**History list:**
+
+```
+════════════════════════════════════════════════
+  Usage History
+════════════════════════════════════════════════
+  Date         Requests   Tokens
+  2025-05-06   42         23.5k(23500)
+  2025-05-05   28         15.2k(15200)
+════════════════════════════════════════════════
+```
 
 ## Client Configuration
 
@@ -231,7 +281,8 @@ src/
 ├── proxy.ts    # Core proxy: forwarding + streaming + retry + SSE filter
 ├── cli.ts      # CLI argument parsing (commander subcommands)
 ├── config.ts   # Config: CLI args + env vars + config discovery + validation
-├── stats.ts    # Session statistics tracking + exit summary
+├── stats.ts    # Session stats + daily stats persistence + exit summary
+├── stats-cmd.ts # CLI stats subcommand handler
 └── util.ts     # Token usage extraction + formatting
 ```
 

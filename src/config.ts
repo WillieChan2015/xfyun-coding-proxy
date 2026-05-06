@@ -13,6 +13,8 @@ export interface ResolvedConfig {
   retryDelay: number;
   verbose: boolean;
   logDir: string;
+  statsDir: string;
+  statsFlushInterval: number;
 }
 
 // 模块级 config：loadConfig() 调用后赋值，proxy.ts 等通过 import { config } 读取
@@ -25,6 +27,8 @@ export let config: ResolvedConfig = {
   retryDelay: 1000,
   verbose: false,
   logDir: './logs',
+  statsDir: './logs/stats',
+  statsFlushInterval: 60_000,
 };
 
 /**
@@ -60,7 +64,7 @@ export function resolveEnvFile(configPath?: string): string | undefined {
  * 3. CWD 下存在 package.json → ./logs（源码开发调试）
  * 4. $XDG_STATE_HOME/maas-coding-proxy/logs（回退 ~/.local/state/maas-coding-proxy/logs）
  */
-function resolveLogDir(cliLogDir?: string): string {
+export function resolveLogDir(cliLogDir?: string): string {
   if (cliLogDir) return resolve(cliLogDir);
 
   const envLogDir = process.env.XFYUN_LOG_DIR;
@@ -94,6 +98,8 @@ export function loadConfig(cliOpts: CliOptions): ResolvedConfig {
     retryDelay: cliOpts.retryDelay ?? parseInt(process.env.RETRY_DELAY_MS || '1000', 10),
     verbose: cliOpts.verbose ?? process.env.VERBOSE === 'true',
     logDir: resolveLogDir(cliOpts.logDir),
+    statsDir: join(resolveLogDir(cliOpts.logDir), 'stats'),
+    statsFlushInterval: parseInt(process.env.STATS_FLUSH_INTERVAL_MS || '60000', 10),
   };
 
   config = resolved;

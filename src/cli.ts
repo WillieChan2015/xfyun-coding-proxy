@@ -9,6 +9,9 @@ export interface CliOptions {
   verbose: boolean;
   logDir?: string;
   config?: string;
+  command?: 'start' | 'stats';
+  statsDate?: string;
+  statsList?: boolean;
 }
 
 export function parseCli(): CliOptions {
@@ -36,6 +39,7 @@ export function parseCli(): CliOptions {
     .option('-v, --verbose', 'enable debug logging')
     .action((opts) => {
       result = {
+        command: 'start',
         port: opts.port ? parseInt(opts.port, 10) : undefined,
         apiKey: opts.apiKey || undefined,
         baseUrl: opts.baseUrl || undefined,
@@ -44,6 +48,20 @@ export function parseCli(): CliOptions {
         verbose: opts.verbose ?? false,
         logDir: opts.logDir || undefined,
         config: opts.config || undefined,
+      };
+    });
+
+  program
+    .command('stats')
+    .description('Show usage statistics')
+    .option('-d, --date <YYYY-MM-DD>', 'show stats for a specific date')
+    .option('-l, --list', 'list all dates with stats')
+    .action((opts) => {
+      result = {
+        verbose: false,
+        command: 'stats',
+        statsDate: opts.date || undefined,
+        statsList: opts.list ?? false,
       };
     });
 

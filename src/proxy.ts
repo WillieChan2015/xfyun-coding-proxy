@@ -1,7 +1,7 @@
 import { FastifyRequest, FastifyReply, FastifyInstance } from 'fastify';
 import { config } from './config';
 import { extractTokenUsage, fmtTokens } from './util';
-import { sessionStats } from './stats';
+import { sessionStats, dailyStats } from './stats';
 
 // HTTP 状态码级别的重试条件：429 限流、503 服务过载
 export const RETRYABLE_STATUS_CODES = new Set([429, 503]);
@@ -411,6 +411,9 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     sessionStats.requestCount++;
     sessionStats.retries += retries;
     sessionStats.errors++;
+    dailyStats.requestCount++;
+    dailyStats.retries += retries;
+    dailyStats.errors++;
 
     reply.status(response.status);
     reply.send(responseBodyText);
@@ -426,6 +429,9 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     sessionStats.requestCount++;
     sessionStats.retries += retries;
     sessionStats.errors++;
+    dailyStats.requestCount++;
+    dailyStats.retries += retries;
+    dailyStats.errors++;
 
     reply.status(response.status);
     reply.send({
@@ -447,6 +453,9 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     sessionStats.requestCount++;
     sessionStats.retries += retries;
     sessionStats.errors++;
+    dailyStats.requestCount++;
+    dailyStats.retries += retries;
+    dailyStats.errors++;
 
     reply.status(response.status);
     reply.send({
@@ -525,6 +534,10 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     sessionStats.totalPromptTokens += promptTokens ?? 0;
     sessionStats.totalCompletionTokens += completionTokens ?? 0;
     sessionStats.retries += retries;
+    dailyStats.requestCount++;
+    dailyStats.totalPromptTokens += promptTokens ?? 0;
+    dailyStats.totalCompletionTokens += completionTokens ?? 0;
+    dailyStats.retries += retries;
     return;
   }
 
@@ -542,6 +555,8 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     });
     sessionStats.requestCount++;
     sessionStats.errors++;
+    dailyStats.requestCount++;
+    dailyStats.errors++;
     return;
   }
 
@@ -575,6 +590,11 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
   sessionStats.totalCompletionTokens += usageInfo.completionTokens ?? 0;
   sessionStats.retries += retries;
   if (!response.ok) sessionStats.errors++;
+  dailyStats.requestCount++;
+  dailyStats.totalPromptTokens += usageInfo.promptTokens ?? 0;
+  dailyStats.totalCompletionTokens += usageInfo.completionTokens ?? 0;
+  dailyStats.retries += retries;
+  if (!response.ok) dailyStats.errors++;
 
   reply.status(response.status);
   reply.send(responseBody);
@@ -605,6 +625,7 @@ export async function handleGetProxy(
   request.log.info(`GET proxied | ${response.status} | ${request.url}`);
 
   sessionStats.requestCount++;
+  dailyStats.requestCount++;
 
   reply.status(response.status);
   reply.header('Content-Type', response.headers.get('content-type') || 'application/json');

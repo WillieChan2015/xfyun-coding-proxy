@@ -3,13 +3,28 @@ import Fastify, { FastifyInstance, FastifyError, FastifyRequest, FastifyReply } 
 import cors from '@fastify/cors';
 import { ResolvedConfig, config } from './config';
 import { handleProxy, handleGetProxy } from './proxy';
-import { printSessionSummary } from './stats';
+import { printSessionSummary, initDailyStats, saveDailyStats, dailyStats } from './stats';
+let flushTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
  * 创建并配置 Fastify 实例（不调用 listen）
  * 便于测试和被其它工具内嵌调用
  */
 export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance> {
+  // 初始化当天统计（从持久化文件加载已有数据）
+  initDailyStats(cfg.logDir);
+
+  // 启动定时刷盘
+  if (cfg.statsFlushInterval > 0) {
+    flushTimer = setInterval(() => {
+      saveDailyStats(cfg.logDir, dailyStats);
+    }, cfg.statsFlushInterval);
+    // 不阻止进程退出
+    if (flushTimer && typeof flushTimer === 'object' && 'unref' in flushTimer) {
+      flushTimer.unref();
+    }
+  }
+
   const server = Fastify({
     // 超时与 body 限制：防止连接挂死/超大请求拖垮本地代理
     connectionTimeout: 30_000,
@@ -96,6 +111,14 @@ export async function startServer(server: FastifyInstance, cfg: ResolvedConfig):
     process.on(signal, async () => {
       server.log.info(`Received ${signal}, shutting down gracefully`);
       try {
+        // 停止定时刷盘
+        if (flushTimer) {
+          clearInterval(flushTimer);
+          flushTimer = null;
+        }
+        // 持久化当天统计
+        saveDailyStats(cfg.logDir, dailyStats);
+
         await server.close();
         server.log.info('Server closed');
         printSessionSummary();
