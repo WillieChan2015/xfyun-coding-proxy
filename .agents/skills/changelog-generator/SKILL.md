@@ -46,8 +46,8 @@ If there are no tags, analyze all commits from the root (`git log --oneline`).
 Get both the high-level overview and the specifics. The overview tells you scope; the specifics tell you substance.
 
 ```bash
-# File-level change summary (scope)
-git diff <latest-tag>..HEAD --stat
+# File-level change summary (scope), excluding README and package.json
+git diff <latest-tag>..HEAD --stat -- ':!README.md' ':!docs/README.en.md' ':!package.json'
 
 # Detailed diffs for key source files (substance)
 git diff <latest-tag>..HEAD -- src/
@@ -55,6 +55,8 @@ git diff <latest-tag>..HEAD -- src/
 # Test file changes (helps understand what behavior was added/fixed)
 git diff <latest-tag>..HEAD -- test/
 ```
+
+**Ignored files:** Changes to `README.md`, `docs/README.en.md`, and `package.json` are excluded from changelog analysis. These files are documentation/metadata that reflect changes already captured elsewhere — they are not user-visible features themselves. Version bumps, keyword additions, badge updates, and README rewrites should never appear as changelog entries.
 
 Read the actual diffs for source files — commit messages alone often miss important details or describe changes at the wrong level of abstraction. The diff shows what actually happened.
 
@@ -171,3 +173,4 @@ After writing, run a quick sanity check:
 - Don't include commit hashes in changelog entries
 - Don't modify version sections that already exist in the file
 - Don't create a new version section — that's a separate release preparation step
+- Don't list changes to `README.md`, `docs/README.en.md`, or `package.json` — version bumps, keyword additions, badge updates, and README rewrites are metadata that reflect changes already captured elsewhere

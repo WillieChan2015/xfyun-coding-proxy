@@ -12,9 +12,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added / 新增
 
+- release 相关 skill（release、release-dry-run、release-audit）新增发布前敏感信息检查，扫描 `package.json` `files` 字段包含的文件及 `src/` 源码，防止真实密钥、私钥或 JWT 泄露到 npm 发布包。
+- Added pre-release sensitive information check to release skills (release, release-dry-run, release-audit), scanning published files and source code for real API keys, private keys, or JWTs.
+- release skill 新增发布时同步 `README.md` 和 `docs/README.en.md` 版本号的步骤。
+- Added step to sync version numbers in `README.md` and `docs/README.en.md` during release.
+- release-dry-run 和 release-audit 新增 README 版本号一致性检查。
+- Added README version consistency check to release-dry-run and release-audit.
+- `src/pretty-roll-transport.js` 纳入 git 跟踪，确保 GitHub 拉取源码后 `pnpm dev` / `pnpm start` 可正常使用 pino 日志轮转。
+- Added `src/pretty-roll-transport.js` to git tracking so `pnpm dev` / `pnpm start` work correctly after cloning from GitHub.
+
 ### Changed / 变更
 
 ### Fixed / 修复
+
+- 修复 `pnpm build` 后 `dist/` 中缺少 `pretty-roll-transport.js` 导致 npm 安装用户 pino 日志轮转报错的问题，build 脚本现在会自动复制该文件。
+- Fixed missing `pretty-roll-transport.js` in `dist/` after `pnpm build`, which caused pino log rotation errors for npm users; the build script now copies the file automatically.
 
 ## [0.0.3-alpha] - 2026-05-06
 
