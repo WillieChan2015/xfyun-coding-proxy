@@ -59,6 +59,7 @@ user-invocable: true
      - `Unreleased` 是否有真实条目；
      - 目标版本标题是否已经存在；
      - 目标 tag 是否会被当作 prerelease。
+   - **敏感信息检查**：扫描 `package.json` `files` 字段包含的所有文件以及 `src/` 源码，确认不存在真实密钥、token 或其他敏感信息泄露。若发现，在阻塞项中列出。
 
 3. **预估本地 release 准备会发生什么**
    - 优先运行 `pnpm release:dry-run <version-or-bump>` 获取结构化预览结果。

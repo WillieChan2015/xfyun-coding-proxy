@@ -83,6 +83,11 @@ user-invocable: true
      - `pnpm test`
      - `pnpm build`
      - `git diff --check`
+   - **敏感信息检查**：扫描 `package.json` `files` 字段包含的所有文件（`dist/`、`.env.example`、`README.md`、`CHANGELOG.md`、`docs/README.en.md`）以及 `src/` 源码，确认不存在真实密钥、token 或其他敏感信息泄露。检查项包括：
+     - 硬编码的 API Key（如 `sk-` 开头的真实密钥、`eyJ` 开头的 JWT）
+     - 私钥（`-----BEGIN PRIVATE KEY`）
+     - `.env` 文件误入 `files` 字段
+     - `dist/` 中是否意外包含了源码或配置文件
    - 只有全部通过，才可以继续推送。
 
 7. **推送并触发远端发布**

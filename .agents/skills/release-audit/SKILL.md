@@ -65,14 +65,20 @@ user-invocable: true
      - `git diff --check`
      - `git status --short`
      - `git tag --list`
+   - **敏感信息检查**：扫描 `package.json` `files` 字段包含的所有文件（`dist/`、`.env.example`、`README.md`、`CHANGELOG.md`、`docs/README.en.md`）以及 `src/` 源码，确认不存在真实密钥、token 或其他敏感信息泄露。检查项包括：
+     - 硬编码的 API Key（如 `sk-` 开头的真实密钥、`eyJ` 开头的 JWT）
+     - 私钥（`-----BEGIN PRIVATE KEY`）
+     - `.env` 文件误入 `files` 字段
+     - `dist/` 中是否意外包含了源码或配置文件
    - 不要运行会写出构建产物或创建 tag/commit 的命令。
 
 4. **识别阻塞项**
 - 常见阻塞包括：
       - `README.md` 或 `docs/README.en.md` 中的版本号与 `package.json` 不一致；
       - `CHANGELOG.md` 中缺少当前版本章节；
-     - `Unreleased` 只有模板，没有真实内容（建议先执行 `/changelog-generator` 补充条目）；
-     - git 工作区存在与发布无关的脏改动；
+      - `Unreleased` 只有模板，没有真实内容（建议先执行 `/changelog-generator` 补充条目）；
+      - 发布文件或源码中存在敏感信息泄露（真实 API Key、私钥、JWT 等）；
+      - git 工作区存在与发布无关的脏改动；
      - 预期目标 tag 已存在；
      - 工作流配置与本地发布脚本不一致。
 
