@@ -1,0 +1,23 @@
+{
+  "skill_name": "changelog-generator",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "整理分析最新的tag到当前最新的提交内容中之间的更改内容，整理成changelog",
+      "expected_output": "CHANGELOG.md 的 [Unreleased] 区域被更新，包含中英双语的 Added/Changed/Fixed 条目，覆盖 v0.0.2-alpha 到 HEAD 之间的两个提交的所有变更",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "I just tagged v1.2.0 and have been working on several features since. Can you update the changelog with everything since that tag?",
+      "expected_output": "Analyzes commits since v1.2.0, classifies changes into Added/Changed/Fixed, writes bilingual entries to CHANGELOG.md",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "项目里还没有任何 tag，帮我把从项目开始到现在的所有变更整理成 changelog",
+      "expected_output": "Handles the no-tag edge case, analyzes all commits from repo root, writes changelog entries",
+      "files": []
+    }
+  ]
+}

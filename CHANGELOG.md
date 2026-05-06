@@ -12,9 +12,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added / 新增
 
+- 新增每日用量统计：跨会话累计当天请求数、token 消耗、重试与错误数，持久化到 `<logDir>/stats/YYYY-MM-DD.json`，并在启动时自动恢复当天已有数据；退出时 Session Summary 也会展示当天累计值。
+- Added daily usage statistics that persist request count, token usage, retries, and errors across sessions to `<logDir>/stats/YYYY-MM-DD.json`, automatically restore the current day on startup, and show the current day's totals in Session Summary on exit.
+- CLI 新增 `stats` 子命令，支持查看当天用量、指定日期用量以及历史日期列表。
+- Added a `stats` CLI subcommand to inspect today's usage, a specific day's usage, and the list of recorded dates.
+- 新增 `STATS_FLUSH_INTERVAL_MS` 环境变量，用于控制每日统计的定时刷盘间隔。
+- Added the `STATS_FLUSH_INTERVAL_MS` environment variable to control the periodic flush interval for daily stats.
+- 新增独立英文文档 `docs/README.en.md`，便于英文用户直接查阅安装、配置与统计说明。
+- Added standalone English documentation at `docs/README.en.md` so English-speaking users can read install, configuration, and stats guidance directly.
+- 补充每日统计与跨 chunk SSE 过滤相关单元测试。
+- Added unit coverage for daily stats helpers and cross-chunk SSE filtering.
+
 ### Changed / 变更
 
+- 日志目录解析在源码仓库开发场景下优先回退到当前工作目录的 `./logs`，让本地调试与 `stats` 查询默认共用同一套日志/统计目录。
+- Log directory resolution now prefers `./logs` when running from the source repository, so local development and the `stats` command share the same default logs and stats location.
+- SSE 事件过滤器重构为有状态的 `SSEFilter` 类，支持跨 TCP chunk 持续解析 `event:` 行，并统一复用讯飞错误详情提取逻辑改进流式/非流式日志。
+- Refactored the SSE event filter into a stateful `SSEFilter` that keeps parsing across TCP chunks, and reused unified iFlytek error extraction to improve both streaming and non-streaming logs.
+- 自动重试范围补充讯飞业务错误码 `11210`，日志轮转 transport 切换为内置 `pretty-roll-transport.js` 并增加 `dateFormat` 配置，同时引入 `pino-pretty` 提升开发环境日志可读性。
+- Added iFlytek business error code `11210` to the auto-retry scope, switched log rotation to the built-in `pretty-roll-transport.js` with `dateFormat`, and added `pino-pretty` for more readable development logs.
+- 启动日志新增当前 `logDir` 输出，请求错误与未命中路由日志改为更易读的单行格式。
+- Startup logs now include the resolved `logDir`, and request-error/unmatched-route logs use a more readable one-line format.
+- README 改为中文主文档并链接独立英文版，英文文档迁移到 `docs/README.en.md`，发布包文件列表也同步切换为该英文文档路径。
+- README is now Chinese-first with a linked standalone English version, English docs moved to `docs/README.en.md`, and the published package now ships that English doc path as well.
+
 ### Fixed / 修复
+
+- 修复 SSE 过滤器在 `event:` 行被拆分到多个 TCP chunk 时可能漏过滤 `progress_notice`、`context_usage` 事件的问题。
+- Fixed SSE filtering when an `event:` line is split across multiple TCP chunks, which could previously leak `progress_notice` and `context_usage` events.
+- 修复对讯飞业务错误码 `10012` 的重试判断：HTTP 4xx 客户端错误不再因为响应体包含该错误码而被误判为可重试。
+- Fixed retry classification for iFlytek error code `10012`: HTTP 4xx client errors are no longer retried just because the response body contains that code.
+- 增强流式与非流式请求在上游返回空响应体时的兜底错误处理，避免返回不明确的失败结果。
+- Improved fallback error handling for both streaming and non-streaming requests when the upstream returns an empty body, avoiding ambiguous failures.
+- 修复 ESLint 对 `*.js` 的忽略范围过宽问题，避免误忽略子目录中的 JavaScript 文件。
+- Fixed the overly broad ESLint `*.js` ignore rule so JavaScript files in subdirectories are no longer skipped unintentionally.
 
 ## [0.0.2-alpha] - 2026-04-30
 

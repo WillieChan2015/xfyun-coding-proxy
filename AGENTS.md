@@ -7,7 +7,8 @@
 - 如文档与实现不一致，优先以 `package.json`、`src/` 当前代码和测试为准，再回补文档。
 - 新增说明时优先链接已有文档，不要把长篇设计、计划或分析内容重复复制到新文件里。
 - 个人分析、设计、计划等本地 AI 辅助资料统一放在 `.github/docs/`，默认不纳入版本控制，也不应成为公开协作前提。
-- `docs/superpowers/` 仅保留迁移说明；后续新增个人 AI 文档请放到 `.github/docs/superpowers/`。
+- 项目专属 skills 已迁移至 `.agents/skills/`（含 `changelog-generator`、`release`、`release-dry-run`、`release-audit`）。
+- 个人 AI 分析、设计、计划等本地资料统一放在 `.github/docs/`，默认不纳入版本控制。
 
 ## 项目定位
 

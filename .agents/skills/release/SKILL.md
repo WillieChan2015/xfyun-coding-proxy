@@ -43,6 +43,7 @@ user-invocable: true
 2. **维护 changelog**
    - 优先把发布说明写在 `CHANGELOG.md` 的 `## [Unreleased]` 下。
    - 确保存在真实条目，而不是只有 `Added / Changed / Fixed` 模板标题。
+   - 如果 `Unreleased` 只有模板标题、没有真实条目，先执行 `/changelog-generator` 从 git 历史自动生成 changelog 条目，然后再继续发布流程。
    - 如果用户已经手工写好了目标版本标题，也允许直接复用。
 
 3. **先做 dry-run 预演**

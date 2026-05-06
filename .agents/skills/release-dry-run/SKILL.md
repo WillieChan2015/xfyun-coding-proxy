@@ -63,7 +63,7 @@ user-invocable: true
    - 优先运行 `pnpm release:dry-run <version-or-bump>` 获取结构化预览结果。
    - 如果目标版本标题已存在：说明 `release:prepare` 会直接复用该章节。
    - 如果目标版本标题不存在且 `Unreleased` 有真实条目：说明 `release:prepare` 会把 `Unreleased` 提升为 `## [version] - YYYY-MM-DD`，然后把 `Unreleased` 重建为标准模板。
-   - 如果 `Unreleased` 只有模板：明确指出 dry-run 在这里会阻塞，真实执行也会失败。
+   - 如果 `Unreleased` 只有模板：先提示用户执行 `/changelog-generator` 补充 changelog 条目，然后再重新 dry-run；明确指出当前 dry-run 在这里会阻塞，真实执行也会失败。
 
 4. **预览 release 输出**
    - 给出：

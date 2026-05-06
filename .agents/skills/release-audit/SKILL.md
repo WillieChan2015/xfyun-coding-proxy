@@ -69,7 +69,7 @@ user-invocable: true
 4. **识别阻塞项**
    - 常见阻塞包括：
      - `CHANGELOG.md` 中缺少当前版本章节；
-     - `Unreleased` 只有模板，没有真实内容；
+     - `Unreleased` 只有模板，没有真实内容（建议先执行 `/changelog-generator` 补充条目）；
      - git 工作区存在与发布无关的脏改动；
      - 预期目标 tag 已存在；
      - 工作流配置与本地发布脚本不一致。
