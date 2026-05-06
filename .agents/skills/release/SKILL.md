@@ -55,20 +55,24 @@ user-invocable: true
        - blockers 与下一步建议。
     - 如果 dry-run 已经暴露 blocker，必须先停下，不要继续执行 `release:prepare`。
 
-4. **执行本地准备**
+4. **同步 README 版本号**
+   - 在执行 `release:prepare` **之前**，先将 `README.md` 中的 `当前版本` 和 `docs/README.en.md` 中的 `Current version` 更新为目标版本号。
+   - 这样 README 的变更会被包含在 `release:prepare` 创建的 release commit 和 tag 中，无需后续 amend。
+
+5. **执行本地准备**
      - 可选两条路径：
         - 手动分步：运行 `pnpm release:prepare <version-or-bump>`；
         - 一条命令自动化：运行 `pnpm release:auto <version-or-bump> [--push] [--yes]`。
-    - 预期行为：
-      - 更新 `package.json` 版本号；
-      - 必要时把 `Unreleased` 提升为 `## [version] - YYYY-MM-DD`；
-      - 重建 `## [Unreleased]` 模板；
-      - 创建本地 commit：`chore: release vX.Y.Z`；
-      - 创建本地 annotated tag：`vX.Y.Z`。
-        - `release:auto` 还会在变更前自动运行 `pnpm test` 与 `pnpm build`，并在准备完成后执行 `pnpm release:check` 与 `git diff --check`；加上 `--push` 时会继续执行 `git push` 和 `git push --tags`。
-    - **同步 README 版本号**：将 `README.md` 中的 `当前版本` 和 `docs/README.en.md` 中的 `Current version` 更新为目标版本号，确保与 `package.json` 一致。
+     - 预期行为：
+       - 更新 `package.json` 版本号；
+       - 必要时把 `Unreleased` 提升为 `## [version] - YYYY-MM-DD`；
+       - 重建 `## [Unreleased]` 模板；
+       - 创建本地 commit：`chore: release vX.Y.Z`；
+       - 创建本地 annotated tag：`vX.Y.Z`。
+         - `release:auto` 还会在变更前自动运行 `pnpm test` 与 `pnpm build`，并在准备完成后执行 `pnpm release:check` 与 `git diff --check`；加上 `--push` 时会继续执行 `git push` 和 `git push --tags`。
+     - 注意：`release:prepare` 脚本本身只提交 `package.json` 和 `CHANGELOG.md`，不会自动包含 README 变更。因此必须先更新 README 并 `git add`，再执行 `release:prepare`，确保 README 变更进入同一个 release commit。
 
-5. **复核本地产物**
+6. **复核本地产物**
    - 检查 `package.json` 的 `version`。
    - 检查 `CHANGELOG.md` 是否同时满足：
      - 目标版本章节存在；
@@ -77,7 +81,7 @@ user-invocable: true
    - 检查 `README.md` 和 `docs/README.en.md` 中的版本号是否与 `package.json` 一致。
    - 检查 git 状态，确认 release commit 和 tag 已创建，且无意外改动。
 
-6. **执行发布前校验**
+7. **执行发布前校验**
    - 运行：
      - `pnpm release:check`
      - `pnpm test`
@@ -90,7 +94,7 @@ user-invocable: true
      - `dist/` 中是否意外包含了源码或配置文件
    - 只有全部通过，才可以继续推送。
 
-7. **推送并触发远端发布**
+8. **推送并触发远端发布**
    - 运行：
      - `git push`
      - `git push --tags`
@@ -100,7 +104,7 @@ user-invocable: true
      - 执行 npm publish；
      - 创建 GitHub Release。
 
-8. **发布后确认**
+9. **发布后确认**
    - 检查 GitHub Actions `publish.yml` 成功。
    - 检查 npm 上新版本已可见。
    - 检查 GitHub Release：

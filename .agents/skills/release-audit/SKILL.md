@@ -53,7 +53,7 @@ user-invocable: true
      - `.github/scripts/prepare-release.mjs`
 - 重点关注：
       - 当前版本号；
-      - `README.md` 和 `docs/README.en.md` 中的版本号是否与 `package.json` 一致；
+      - `README.md` 和 `docs/README.en.md` 中的版本号是否与 `package.json` 一致（注意：`/release` 流程会在 `release:prepare` 之前自动同步 README 版本号，所以此处不一致不阻塞发版，仅作提醒）；
       - `Unreleased` 是否有真实条目；
       - 目标版本章节是否已存在；
       - 发布工作流是否仍按 `v*` tag 触发。
@@ -74,7 +74,7 @@ user-invocable: true
 
 4. **识别阻塞项**
 - 常见阻塞包括：
-      - `README.md` 或 `docs/README.en.md` 中的版本号与 `package.json` 不一致；
+      - `README.md` 或 `docs/README.en.md` 中的版本号与 `package.json` 不一致（`/release` 流程会在 `release:prepare` 之前自动同步，此处仅提醒）；
       - `CHANGELOG.md` 中缺少当前版本章节；
       - `Unreleased` 只有模板，没有真实内容（建议先执行 `/changelog-generator` 补充条目）；
       - 发布文件或源码中存在敏感信息泄露（真实 API Key、私钥、JWT 等）；

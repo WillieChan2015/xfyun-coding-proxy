@@ -55,7 +55,7 @@ user-invocable: true
      - `.github/workflows/publish.yml`
    - 重点判断：
      - 当前版本号；
-     - `README.md` 和 `docs/README.en.md` 中的版本号是否与 `package.json` 一致（若不一致，在阻塞项中提示）；
+      - `README.md` 和 `docs/README.en.md` 中的版本号是否与 `package.json` 一致（若不一致，在阻塞项中提示；注意：`/release` 流程会在 `release:prepare` 之前自动同步 README 版本号，所以此处不一致不阻塞 dry-run，仅作提醒）；
      - `Unreleased` 是否有真实条目；
      - 目标版本标题是否已经存在；
      - 目标 tag 是否会被当作 prerelease。
