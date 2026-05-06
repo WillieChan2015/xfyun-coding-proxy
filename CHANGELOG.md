@@ -12,6 +12,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added / 新增
 
+### Changed / 变更
+
+### Fixed / 修复
+
+## [0.0.4-alpha] - 2026-05-06
+
+### Added / 新增
+
 - release 相关 skill（release、release-dry-run、release-audit）新增发布前敏感信息检查，扫描 `package.json` `files` 字段包含的文件及 `src/` 源码，防止真实密钥、私钥或 JWT 泄露到 npm 发布包。
 - Added pre-release sensitive information check to release skills (release, release-dry-run, release-audit), scanning published files and source code for real API keys, private keys, or JWTs.
 - release skill 新增发布时同步 `README.md` 和 `docs/README.en.md` 版本号的步骤。
