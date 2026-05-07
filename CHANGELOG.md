@@ -16,6 +16,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed / 修复
 
+## [0.0.5-alpha] - 2026-05-07
+
+### Added / 新增
+
+- 新增 `extractXfyunError()` 工具函数，从讯飞响应体中提取错误码、错误消息和 Sid，支持多种格式（`{"code":10012,"msg":"..."}`、`{"error":{"code":"ModelArts.81001",...}}`、SSE `data:{"error":{...}}`）。
+- Added `extractXfyunError()` utility to extract error code, message, and Sid from iFlytek response bodies, supporting multiple formats.
+- 新增 `summarizeContentTypes()` 工具函数，在请求入口日志中展示 messages 的 content 类型分布（如 `3 msgs: 2 text, 1 image_url`），便于排查 image_url 等不支持的 content type 问题。
+- Added `summarizeContentTypes()` utility to show content type distribution in request entry logs (e.g. `3 msgs: 2 text, 1 image_url`), helping diagnose unsupported content type issues.
+- 新增请求入口日志，记录请求路径、stream 模式和 content 类型分布。
+- Added request entry log showing path, stream mode, and content type distribution.
+
+### Changed / 变更
+
+- SSE 事件过滤策略从黑名单（`BLOCKED_SSE_EVENTS`）改为白名单（`ALLOWED_SSE_EVENTS`），只转发标准 OpenAI 事件类型（`message`），其余全部丢弃。防止讯飞新增任何非标准事件类型导致 Trae IDE 报 4054 错误。
+- Changed SSE event filtering from blocklist (`BLOCKED_SSE_EVENTS`) to allowlist (`ALLOWED_SSE_EVENTS`), only forwarding standard OpenAI event type (`message`). Prevents Trae IDE 4054 errors from any new non-standard event types iFlytek may introduce.
+- 流式请求超时或异常时，向 SSE 流写入 OpenAI 兼容的错误事件（`{"error":{"message":"stream interrupted: ..."}}`）+ `[DONE]`，让客户端能识别流异常终止而非收到空内容。
+- On stream timeout or error, writes an OpenAI-compatible error event (`{"error":{"message":"stream interrupted: ..."}}`) + `[DONE]` to the SSE stream, so clients can detect abnormal termination instead of receiving empty content.
+- 流中检测到讯飞错误（10012/11210 等）时主动 `break` 结束流，不再继续等待后续数据。
+- When iFlytek errors (10012/11210 etc.) are detected in stream, actively `break` to end the stream instead of continuing to wait.
+- 所有错误日志和重试日志新增 `sid=` 字段，Sid 是关联讯飞侧日志的关键标识。
+- Added `sid=` field to all error and retry logs; Sid is the key identifier for correlating iFlytek-side logs.
+- 非流式上游错误日志新增讯飞错误码和消息提取（`xfyun_code=... msg=...`），不再只记录原始 body。
+- Non-stream upstream error logs now include extracted iFlytek error code and message (`xfyun_code=... msg=...`) instead of only raw body.
+- 重试日志中的讯飞错误原因从 `xfyun code in body` 改为具体的 `xfyun_code=... msg=... sid=...`。
+- Retry logs now show specific `xfyun_code=... msg=... sid=...` instead of generic `xfyun code in body`.
+
+### Fixed / 修复
+
+- 修复对讯飞业务错误码 `10012` 的重试判断：HTTP 4xx 客户端错误（如 400 Bad Request）不再因响应体包含 10012 而被误判为可重试，避免对不支持的 content type 等客户端错误进行无效重试。
+- Fixed retry classification for iFlytek error code `10012`: HTTP 4xx client errors (e.g. 400 Bad Request) are no longer retried just because the response body contains 10012, avoiding wasted retries on client errors like unsupported content types.
+- 修复非流式请求上游返回空 body 时 `JSON.parse(null)` 崩溃的问题，改为返回 OpenAI 格式错误响应。
+- Fixed `JSON.parse(null)` crash when non-stream upstream returns empty body; now returns an OpenAI-format error response.
+- 修复流式请求上游返回非 2xx 且无 body 时 `response.body.getReader()` 崩溃的问题，改为返回 OpenAI 格式错误响应。
+- Fixed `response.body.getReader()` crash when stream upstream returns non-2xx with no body; now returns an OpenAI-format error response.
+
 ## [0.0.4-alpha] - 2026-05-06
 
 ### Added / 新增
