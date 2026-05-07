@@ -32,7 +32,7 @@ export function isRetryableXfyunError(responseBody: string): boolean {
  *   - {"error":{"code":"ModelArts.81001","message":"..."}}
  *   - SSE 格式 data:{"error":{...}}
  */
-export function extractXfyunError(body: string): { code?: string | number; msg?: string } | null {
+export function extractXfyunError(body: string): { code?: string | number; msg?: string; sid?: string } | null {
   // 尝试去掉 SSE data: 前缀
   const jsonStr = body.replace(/^data:\s*/m, '').trim();
   try {
@@ -40,15 +40,22 @@ export function extractXfyunError(body: string): { code?: string | number; msg?:
 
     // 格式1: {"code": 10012, "msg": "..."}
     if (parsed.code !== undefined) {
-      return { code: parsed.code as string | number, msg: parsed.msg as string | undefined };
+      const msg = parsed.msg as string | undefined;
+      return {
+        code: parsed.code as string | number,
+        msg,
+        sid: extractSidFromMsg(msg) ?? extractSidFromBody(body),
+      };
     }
 
     // 格式2: {"error": {"code": "ModelArts.81001", "message": "..."}}
     const error = parsed.error as Record<string, unknown> | undefined;
     if (error) {
+      const msg = (error.message ?? parsed.error_msg) as string | undefined;
       return {
         code: (error.code ?? parsed.error_code) as string | number | undefined,
-        msg: (error.message ?? parsed.error_msg) as string | undefined,
+        msg,
+        sid: extractSidFromMsg(msg) ?? extractSidFromBody(body),
       };
     }
   } catch {
@@ -56,13 +63,33 @@ export function extractXfyunError(body: string): { code?: string | number; msg?:
     const codeMatch = body.match(/"code"\s*:\s*(\d+)/);
     const msgMatch = body.match(/"msg"\s*:\s*"([^"]*)"/);
     if (codeMatch || msgMatch) {
+      const msg = msgMatch ? msgMatch[1] : undefined;
       return {
         code: codeMatch ? codeMatch[1] : undefined,
-        msg: msgMatch ? msgMatch[1] : undefined,
+        msg,
+        sid: extractSidFromMsg(msg) ?? extractSidFromBody(body),
       };
     }
   }
   return null;
+}
+
+/**
+ * 从讯飞错误 msg 中提取 Sid
+ * 格式: "Xunfei request failed with Sid: cht000b3fc4@dx19e0072f47eb958700 code: 10012, msg: ..."
+ */
+function extractSidFromMsg(msg: string | undefined): string | undefined {
+  if (!msg) return undefined;
+  const match = msg.match(/Sid:\s*(cht[\w@]+)/);
+  return match ? match[1] : undefined;
+}
+
+/**
+ * 从响应体中直接提取 Sid（兜底）
+ */
+function extractSidFromBody(body: string): string | undefined {
+  const match = body.match(/"sid"\s*:\s*"(cht[^"]+)"/);
+  return match ? match[1] : undefined;
 }
 
 /**
@@ -116,24 +143,25 @@ export function buildUpstreamUrl(path: string): string {
   return `${base}${cleanPath}`;
 }
 
-// 讯飞 SSE 事件类型白名单：仅转发标准 OpenAI 兼容事件
-// 讯飞会发送 progress_notice（处理进度心跳）和 context_usage（token用量更新）等
-// 非标准事件，Trae IDE 的 SSE 解析器不认识这些事件类型，遇到时会终止流并报 4054
+// SSE 事件类型白名单：只转发标准 OpenAI 兼容事件
+// OpenAI SSE 规范中，默认事件类型是 "message"（无 event: 行时等同于 event: message）
+// 讯飞会发送 progress_notice、context_usage 等非标准事件，
+// Trae IDE 的 SSE 解析器遇到不认识的 event 类型会终止流并报 4054
 // 参考：https://github.com/Trae-AI/Trae/issues/2466
-export const BLOCKED_SSE_EVENTS = new Set(['progress_notice', 'context_usage']);
+// 白名单策略比黑名单更安全：讯飞可能新增任何非标准事件，黑名单无法覆盖
+export const ALLOWED_SSE_EVENTS = new Set(['message']);
 
 /**
- * 有状态的 SSE 事件过滤器
+ * 有状态的 SSE 事件过滤器（白名单策略）
+ *
+ * 只转发 ALLOWED_SSE_EVENTS 中的事件类型（"message"）和无 event: 行的默认事件。
+ * 任何不在白名单中的 event: 类型都会被整事件跳过（含其 data 行）。
  *
  * 解决核心问题：TCP 流的 chunk 边界是任意的，一个 SSE 行可能被拆成多个 chunk。
  * 例如 "event: progress_notice" 可能被拆成：
  *   chunk1: "event: progress"
  *   chunk2: "_notice\ndata: ..."
  * 无状态按 chunk 独立处理会漏过滤，导致 Trae IDE 收到非标准事件后报 4054。
- *
- * 状态：
- *   pendingLine  — 上一 chunk 末尾未以 \n 结尾的不完整行，下次 filter() 时拼到首行
- *   skipCurrentEvent — 当前事件是否正在被跳过
  */
 export class SSEFilter {
   private pendingLine = '';
@@ -141,16 +169,14 @@ export class SSEFilter {
 
   /**
    * 过滤一个 chunk 中的 SSE 事件
-   * 跨 chunk 维护状态，确保 event: 行完整后再判断是否过滤
+   * 跨 chunk 维护状态，确保 event: 行完整后再判断是否转发
    */
   filter(rawChunk: string, log: FastifyInstance['log']): string {
     const text = this.pendingLine + rawChunk;
 
-    // 找到最后一个换行符的位置，之前的行是完整的，之后是不完整行留到下次
     const lastNewline = text.lastIndexOf('\n');
 
     if (lastNewline === -1) {
-      // 整个 chunk 没有换行符，全部缓冲
       this.pendingLine = text;
       return '';
     }
@@ -164,7 +190,7 @@ export class SSEFilter {
     for (const line of lines) {
       if (line.startsWith('event:')) {
         const eventType = line.slice(6).trim();
-        this.skipCurrentEvent = BLOCKED_SSE_EVENTS.has(eventType);
+        this.skipCurrentEvent = !ALLOWED_SSE_EVENTS.has(eventType);
         if (this.skipCurrentEvent) {
           log.debug(`filtered SSE event: ${eventType}`);
           continue;
@@ -181,7 +207,6 @@ export class SSEFilter {
       outputLines.push(line);
     }
 
-    // 用 \n 重建，并在末尾补 \n 恢复原始换行符
     return outputLines.length > 0 ? outputLines.join('\n') + '\n' : '';
   }
 }
@@ -282,7 +307,7 @@ async function fetchWithRetry(
         const xfyunErr = extractXfyunError(body);
         const reason = RETRYABLE_STATUS_CODES.has(response.status)
           ? `HTTP ${response.status}`
-          : `xfyun_code=${xfyunErr?.code} msg=${xfyunErr?.msg}`;
+          : `xfyun_code=${xfyunErr?.code} msg=${xfyunErr?.msg} sid=${xfyunErr?.sid ?? 'n/a'}`;
         log.warn(`${reason} on attempt ${attempt + 1}, retrying in ${backoff}ms...`);
         await sleep(backoff);
         retries++;
@@ -403,7 +428,7 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
   // 4a. 非流式请求的上游错误：直接透传错误响应
   if (!response.ok && !isStream && responseBodyText) {
     const xfyunErr = extractXfyunError(responseBodyText);
-    const errDetail = xfyunErr ? ` | xfyun_code=${xfyunErr.code} msg=${xfyunErr.msg}` : '';
+    const errDetail = xfyunErr ? ` | xfyun_code=${xfyunErr.code} msg=${xfyunErr.msg} sid=${xfyunErr.sid ?? 'n/a'}` : '';
     request.log.error(
       `upstream error | ${response.status} | ${durationMs}ms | retries=${retries}${errDetail} | body=${responseBodyText.slice(0, 300)}`,
     );
@@ -481,6 +506,7 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     const sseFilter = new SSEFilter();
     let promptTokens: number | undefined;
     let completionTokens: number | undefined;
+    let streamError: string | null = null;
 
     try {
       while (true) {
@@ -495,18 +521,22 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
 
         if (isRetryableXfyunError(rawChunk)) {
           const xfyunErr = extractXfyunError(rawChunk);
-          const errDetail = xfyunErr ? `code=${xfyunErr.code} msg=${xfyunErr.msg}` : 'unknown';
+          const errDetail = xfyunErr ? `code=${xfyunErr.code} msg=${xfyunErr.msg} sid=${xfyunErr.sid ?? 'n/a'}` : 'unknown';
+          streamError = errDetail;
           request.log.warn(
             `xfyun retryable error in stream (cannot retry, headers already sent) | ${errDetail}`,
           );
+          break;
         }
 
         if (!isRetryableXfyunError(rawChunk) && rawChunk.includes('"error"')) {
           const xfyunErr = extractXfyunError(rawChunk);
           if (xfyunErr) {
+            streamError = `code=${xfyunErr.code} msg=${xfyunErr.msg} sid=${xfyunErr.sid ?? 'n/a'}`;
             request.log.warn(
-              `upstream error in stream | code=${xfyunErr.code} msg=${xfyunErr.msg}`,
+              `upstream error in stream | ${streamError}`,
             );
+            break;
           }
         }
 
@@ -518,9 +548,34 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
           completionTokens = parseInt(usageMatch[2], 10);
         }
       }
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      streamError = errMsg;
+      request.log.error(`stream error | ${durationMs}ms | ${errMsg}`);
+
+      // 向 SSE 流发送错误事件，让客户端知道流异常终止
+      const sseError = `data: ${JSON.stringify({
+        error: {
+          message: `stream interrupted: ${errMsg}`,
+          type: 'upstream_error',
+          code: 500,
+        },
+      })}\n\ndata: [DONE]\n\n`;
+      reply.raw.write(sseError);
     } finally {
       reader.releaseLock();
       reply.raw.end();
+    }
+
+    if (streamError) {
+      request.log.error(`stream aborted | ${durationMs}ms | ${streamError}`);
+      sessionStats.requestCount++;
+      sessionStats.errors++;
+      dailyStats.requestCount++;
+      dailyStats.errors++;
+      sessionStats.retries += retries;
+      dailyStats.retries += retries;
+      return;
     }
 
     const tokenInfo =

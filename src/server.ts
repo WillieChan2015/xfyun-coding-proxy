@@ -100,6 +100,7 @@ export async function startServer(server: FastifyInstance, cfg: ResolvedConfig):
   try {
     await server.listen({ port: cfg.port, host: '127.0.0.1' });
     server.log.info(`Forwarding /v1/* → ${cfg.baseUrl}`);
+    server.log.info(`Config file: ${cfg.configFile ?? '(none)'}`);
     server.log.info(`Log dir: ${cfg.logDir}`);
   } catch (err) {
     server.log.error(err);

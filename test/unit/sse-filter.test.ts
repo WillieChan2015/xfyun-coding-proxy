@@ -1,11 +1,24 @@
 import { describe, it, expect, vi } from 'bun:test';
-import { filterSSEEvents, SSEFilter } from '../../src/proxy';
+import { filterSSEEvents, SSEFilter, ALLOWED_SSE_EVENTS } from '../../src/proxy';
 
 const mockLog = { debug: vi.fn() } as any;
+
+describe('ALLOWED_SSE_EVENTS', () => {
+  it('only contains "message"', () => {
+    expect(ALLOWED_SSE_EVENTS.size).toBe(1);
+    expect(ALLOWED_SSE_EVENTS.has('message')).toBe(true);
+  });
+});
 
 describe('filterSSEEvents', () => {
   it('passes through standard data events unchanged', () => {
     const input = 'data: {"content":"hello"}\n\ndata: [DONE]\n\n';
+    const result = filterSSEEvents(input, mockLog);
+    expect(result).toBe(input);
+  });
+
+  it('passes through event: message events', () => {
+    const input = 'event: message\ndata: {"content":"hello"}\n\n';
     const result = filterSSEEvents(input, mockLog);
     expect(result).toBe(input);
   });
@@ -18,6 +31,12 @@ describe('filterSSEEvents', () => {
 
   it('filters out context_usage events', () => {
     const input = 'event: context_usage\ndata: {"tokens":100}\n\ndata: {"content":"hello"}\n\n';
+    const result = filterSSEEvents(input, mockLog);
+    expect(result).toBe('data: {"content":"hello"}\n\n');
+  });
+
+  it('filters out any unknown event type (whitelist strategy)', () => {
+    const input = 'event: some_new_event\ndata: "surprise"\n\ndata: {"content":"hello"}\n\n';
     const result = filterSSEEvents(input, mockLog);
     expect(result).toBe('data: {"content":"hello"}\n\n');
   });

@@ -178,7 +178,7 @@ export function printSessionSummary(): void {
     console.log('──────────────────────────────────────────────────');
     console.log(`  Today (${dailyStats.date})`);
     console.log(`  Requests:       ${dailyStats.requestCount}`);
-    console.log(`  Tokens:         ${fmtTokens(totalDailyTokens)}(${totalDailyTokens})`);
+    console.log(`  Tokens:         ${fmtTokens(totalDailyTokens)}`);
   }
 
   console.log('════════════════════════════════════════════════');

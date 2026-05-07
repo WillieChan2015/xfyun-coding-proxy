@@ -15,6 +15,8 @@ export interface ResolvedConfig {
   logDir: string;
   statsDir: string;
   statsFlushInterval: number;
+  /** 实际加载的配置文件路径，未找到时为 undefined */
+  configFile?: string;
 }
 
 // 模块级 config：loadConfig() 调用后赋值，proxy.ts 等通过 import { config } 读取
@@ -29,6 +31,7 @@ export let config: ResolvedConfig = {
   logDir: './logs',
   statsDir: './logs/stats',
   statsFlushInterval: 60_000,
+  configFile: undefined,
 };
 
 /**
@@ -100,6 +103,7 @@ export function loadConfig(cliOpts: CliOptions): ResolvedConfig {
     logDir: resolveLogDir(cliOpts.logDir),
     statsDir: join(resolveLogDir(cliOpts.logDir), 'stats'),
     statsFlushInterval: parseInt(process.env.STATS_FLUSH_INTERVAL_MS || '60000', 10),
+    configFile: envFile,
   };
 
   config = resolved;

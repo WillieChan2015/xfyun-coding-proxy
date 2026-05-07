@@ -8,6 +8,9 @@ src/**/*.js
 src/**/*.d.ts
 src/**/*.js.map
 
+# 例外
+!src/pretty-roll-transport.js
+
 # Local runtime artifacts
 logs/
 .DS_Store
