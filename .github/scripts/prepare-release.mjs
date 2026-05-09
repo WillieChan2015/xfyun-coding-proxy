@@ -100,6 +100,42 @@ async function readCurrentVersion(packageJsonPath) {
   return parsePackageJson(packageJsonContent).version;
 }
 
+// README.md 和 docs/README.en.md 中的版本号需要与 package.json 保持一致。
+// 把旧版本号替换为新版本号，确保 release commit 包含 README 变更。
+export async function updateReadmeVersions(oldVersion, newVersion, options = {}) {
+  const readmePath = options.readmePath ?? 'README.md';
+  const readmeEnPath = options.readmeEnPath ?? 'docs/README.en.md';
+  const updatedFiles = [];
+
+  for (const filePath of [readmePath, readmeEnPath]) {
+    let content;
+    try {
+      content = await readFile(filePath, 'utf8');
+    } catch {
+      // 文件可能不存在（比如 docs/README.en.md 尚未创建），跳过即可。
+      continue;
+    }
+
+    const escapedOld = escapeRegExp(oldVersion);
+    const updated = content
+      .replace(
+        new RegExp(`(当前版本[\\s：:]*\`)${escapedOld}(\`)`, 'g'),
+        `$1${newVersion}$2`,
+      )
+      .replace(
+        new RegExp(`(Current version[\\s：:]*\`)${escapedOld}(\`)`, 'g'),
+        `$1${newVersion}$2`,
+      );
+
+    if (updated !== content) {
+      await writeFile(filePath, updated, 'utf8');
+      updatedFiles.push(filePath);
+    }
+  }
+
+  return updatedFiles;
+}
+
 // 发布脚本只负责创建新 tag，不应覆盖已有 tag；存在即立刻失败。
 async function ensureTagDoesNotExist(tagName) {
   try {
@@ -112,8 +148,8 @@ async function ensureTagDoesNotExist(tagName) {
   }
 }
 
-// 本地发布准备入口：升级版本、同步 changelog、校验 release notes、创建 release commit 与 tag。
-// 若过程中任一步失败，会把 package.json 和 CHANGELOG.md 回滚到调用前状态。
+// 本地发布准备入口：升级版本、同步 changelog 与 README 版本号、校验 release notes、创建 release commit 与 tag。
+// 若过程中任一步失败，会把 package.json、CHANGELOG.md 和 README 文件回滚到调用前状态。
 export async function prepareRelease(versionInput, options = {}) {
   if (!versionInput) {
     throw new Error(
@@ -123,10 +159,23 @@ export async function prepareRelease(versionInput, options = {}) {
 
   const packageJsonPath = options.packageJsonPath ?? 'package.json';
   const changelogPath = options.changelogPath ?? 'CHANGELOG.md';
+  const readmePath = options.readmePath ?? 'README.md';
+  const readmeEnPath = options.readmeEnPath ?? 'docs/README.en.md';
   const originalPackageJson = await readFile(packageJsonPath, 'utf8');
   const originalChangelog = await readFile(changelogPath, 'utf8');
+  const oldVersion = parsePackageJson(originalPackageJson).version;
+  // 提前备份 README 文件原始内容，失败时用于回滚。
+  const readmeOriginals = new Map();
+  for (const filePath of [readmePath, readmeEnPath]) {
+    try {
+      readmeOriginals.set(filePath, await readFile(filePath, 'utf8'));
+    } catch {
+      // 文件可能不存在，跳过即可。
+    }
+  }
   let versionChanged = false;
   let changelogChanged = false;
+  let readmeChanged = false;
 
   try {
     // 先确认当前目录就是 git 仓库，避免后续 commit/tag 在错误目录里执行。
@@ -137,6 +186,13 @@ export async function prepareRelease(versionInput, options = {}) {
 
     const version = await readCurrentVersion(packageJsonPath);
     const tagName = getTagName(version);
+
+    // 同步 README.md 和 docs/README.en.md 中的版本号，确保 release commit 包含 README 变更。
+    const readmeUpdatedFiles = await updateReadmeVersions(oldVersion, version, { readmePath, readmeEnPath });
+    if (readmeUpdatedFiles.length > 0) {
+      readmeChanged = true;
+    }
+
     const preparedChangelog = prepareChangelogForRelease(originalChangelog, version);
 
     if (preparedChangelog !== originalChangelog) {
@@ -148,8 +204,9 @@ export async function prepareRelease(versionInput, options = {}) {
     extractReleaseNotes(preparedChangelog, tagName);
     await ensureTagDoesNotExist(tagName);
 
-    // 只提交 release 元数据文件，避免把工作区里的无关改动“顺手发版”。
-    run('git', ['commit', '--only', '-m', `chore: release ${tagName}`, '--', packageJsonPath, changelogPath]);
+    // 提交 release 元数据文件和 README 变更，避免把工作区里的无关改动"顺手发版"。
+    const commitFiles = [packageJsonPath, changelogPath, ...readmeUpdatedFiles];
+    run('git', ['commit', '--only', '-m', `chore: release ${tagName}`, '--', ...commitFiles]);
     run('git', ['tag', '-a', tagName, '-m', tagName]);
 
     console.log(`Prepared ${tagName}.`);
@@ -157,13 +214,19 @@ export async function prepareRelease(versionInput, options = {}) {
 
     return { version, tagName };
   } catch (error) {
-    // 失败时尽量恢复到调用前状态，避免半更新的版本号或 changelog 留在工作区里。
+    // 失败时尽量恢复到调用前状态，避免半更新的版本号、changelog 或 README 留在工作区里。
     if (versionChanged) {
       await writeFile(packageJsonPath, originalPackageJson, 'utf8');
     }
 
     if (changelogChanged) {
       await writeFile(changelogPath, originalChangelog, 'utf8');
+    }
+
+    if (readmeChanged) {
+      for (const [filePath, original] of readmeOriginals) {
+        await writeFile(filePath, original, 'utf8');
+      }
     }
 
     throw error;

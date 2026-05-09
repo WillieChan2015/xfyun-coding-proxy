@@ -21,7 +21,7 @@
   - 校验当前 `package.json.version` 在 `CHANGELOG.md` 中有对应标题。
 
 - `.github/scripts/prepare-release.mjs`
-  - 本地 release 准备脚本：升级版本、必要时从 `Unreleased` 生成版本章节、重建模板、创建 commit 与 tag。
+  - 本地 release 准备脚本：升级版本、同步 README 版本号、必要时从 `Unreleased` 生成版本章节、重建模板、创建 commit 与 tag。
 
 - `.github/scripts/extract-release-notes.mjs`
   - 从 `CHANGELOG.md` 中提取某个 tag 对应的发布说明。
@@ -49,4 +49,5 @@
 
 - 带 `-` 的版本 tag（例如 `v0.0.2-beta.1`）会被 GitHub Actions 标记为 prerelease。
 - `release:prepare` 不会自动 push。
+- `release:prepare` 会自动同步 `README.md` 和 `docs/README.en.md` 中的版本号，并将变更包含在 release commit 中。
 - 只有模板、没有真实条目的 `Unreleased` 会阻止本地 release 准备继续执行。

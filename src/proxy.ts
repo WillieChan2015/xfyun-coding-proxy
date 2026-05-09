@@ -124,11 +124,55 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * 从 SSE rawChunk 中提取 token 用量
+ * 支持两种格式：
+ *   1. 标准 OpenAI usage：{"prompt_tokens":N,"completion_tokens":N}（仅当值 > 0 时返回）
+ *   2. 讯飞 context_usage 事件：{"tokens":N}（独立 key，非 total_tokens；仅当 N > 0 时返回）
+ *
+ * 一个 rawChunk 可能包含多个 SSE 事件（中间事件 usage 为 0，最后事件为真实值），
+ * 因此用全局匹配取最后一个非零结果。
+ */
+export function extractStreamUsage(rawChunk: string): { promptTokens?: number; completionTokens?: number; totalTokens?: number } {
+  // 标准格式：全局匹配所有 prompt_tokens+completion_tokens 对，取最后一个非零值
+  const usageRegex = /"prompt_tokens":\s*(\d+).*?"completion_tokens":\s*(\d+)/g;
+  let lastPt: number | undefined;
+  let lastCt: number | undefined;
+  let match: RegExpExecArray | null;
+  while ((match = usageRegex.exec(rawChunk)) !== null) {
+    const pt = parseInt(match[1], 10);
+    const ct = parseInt(match[2], 10);
+    if (pt > 0 || ct > 0) {
+      lastPt = pt;
+      lastCt = ct;
+    }
+  }
+  if (lastPt !== undefined) {
+    return { promptTokens: lastPt, completionTokens: lastCt };
+  }
+
+  // 讯飞 context_usage 格式：{"tokens":N} 作为独立 key（非 "total_tokens"）
+  const contextRegex = /(?<!total_)"tokens":\s*(\d+)/g;
+  let lastTotal: number | undefined;
+  while ((match = contextRegex.exec(rawChunk)) !== null) {
+    const t = parseInt(match[1], 10);
+    if (t > 0) {
+      lastTotal = t;
+    }
+  }
+  if (lastTotal !== undefined) {
+    return { totalTokens: lastTotal };
+  }
+
+  return {};
+}
+
+/**
  * 路径重写：客户端请求 /v1/* → 上游 /v2/*
+ * 也支持 /ollama/v1/* → 上游 /v2/*（VS Code Continue.dev 等工具的 Ollama OpenAI 兼容路径）
  * 讯飞 Coding Plan 的 OpenAI 协议端点使用 /v2 前缀
  */
 export function rewritePath(originalPath: string): string {
-  return originalPath.replace(/^\/v1/, '');
+  return originalPath.replace(/^\/ollama\/v1/, '/v1').replace(/^\/v1/, '');
 }
 
 /**
@@ -245,7 +289,7 @@ export function cleanXfyunFields(chunk: string): string {
  *   - 响应体包含讯飞错误码 10012（仅 readBody=true 时检测）
  *   - 网络层异常（fetch 抛错，如连接超时、DNS 失败）
  */
-async function fetchWithRetry(
+export async function fetchWithRetry(
   url: string,
   options: RequestInit,
   maxRetries: number,
@@ -540,12 +584,13 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
           }
         }
 
-        const usageMatch = rawChunk.match(
-          /"prompt_tokens":\s*(\d+).*?"completion_tokens":\s*(\d+)/,
-        );
-        if (usageMatch) {
-          promptTokens = parseInt(usageMatch[1], 10);
-          completionTokens = parseInt(usageMatch[2], 10);
+        const usage = extractStreamUsage(rawChunk);
+        if (usage.promptTokens !== undefined) {
+          promptTokens = usage.promptTokens;
+          completionTokens = usage.completionTokens;
+        } else if (usage.totalTokens !== undefined) {
+          promptTokens = usage.totalTokens;
+          completionTokens = 0;
         }
       }
     } catch (err) {

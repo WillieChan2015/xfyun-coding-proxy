@@ -3,6 +3,7 @@ import Fastify, { FastifyInstance, FastifyError, FastifyRequest, FastifyReply } 
 import cors from '@fastify/cors';
 import { ResolvedConfig, config } from './config';
 import { handleProxy, handleGetProxy } from './proxy';
+import { handleOllamaChat, handleOllamaGenerate } from './ollama/handler';
 import { printSessionSummary, initDailyStats, saveDailyStats, dailyStats } from './stats';
 let flushTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -75,6 +76,97 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
   server.post('/v1/*', handleProxy);
   server.get('/v1/*', handleGetProxy);
 
+  // Ollama 协议路由：带 /ollama 前缀（Base URL = http://localhost:3000/ollama）
+  server.post('/ollama/api/chat', handleOllamaChat);
+  server.post('/ollama/api/generate', handleOllamaGenerate);
+  // VS Code Continue.dev 等工具在 Ollama 模式下使用 OpenAI 兼容路径
+  server.post('/ollama/v1/chat/completions', handleProxy);
+  server.get('/ollama/v1/models', handleGetProxy);
+  server.get('/ollama/api/tags', async () => {
+    return {
+      models: [{
+        name: 'astron-code-latest',
+        model: 'astron-code-latest',
+        modified_at: new Date().toISOString(),
+        size: 0,
+        digest: '',
+        details: {
+          parent_model: '',
+          format: 'gguf',
+          family: 'astron',
+          parameter_size: '',
+          quantization_level: '',
+        },
+      }],
+    };
+  });
+  server.get('/ollama/api/version', async () => {
+    return { version: '0.12.6' };
+  });
+  server.post('/ollama/api/show', async () => {
+    return {
+      modified_at: new Date().toISOString(),
+      details: {
+        parent_model: '',
+        format: 'gguf',
+        family: 'astron',
+        families: ['astron'],
+        parameter_size: '',
+        quantization_level: '',
+      },
+      capabilities: ['completion', 'tools'],
+      model_info: {
+        'general.architecture': 'astron',
+        'astron.context_length': 192000,
+        'general.parameter_count': 0,
+      },
+    };
+  });
+
+  // Ollama 协议路由：不带前缀（Base URL = http://localhost:3000，VSCode 等工具直接拼接 /api/tags）
+  server.post('/api/chat', handleOllamaChat);
+  server.post('/api/generate', handleOllamaGenerate);
+  server.get('/api/tags', async () => {
+    return {
+      models: [{
+        name: 'astron-code-latest',
+        model: 'astron-code-latest',
+        modified_at: new Date().toISOString(),
+        size: 0,
+        digest: '',
+        details: {
+          parent_model: '',
+          format: 'gguf',
+          family: 'astron',
+          parameter_size: '',
+          quantization_level: '',
+        },
+      }],
+    };
+  });
+  server.get('/api/version', async () => {
+    return { version: '0.12.6' };
+  });
+  server.post('/api/show', async () => {
+    return {
+      modified_at: new Date().toISOString(),
+      details: {
+        parent_model: '',
+        format: 'gguf',
+        family: 'astron',
+        families: ['astron'],
+        parameter_size: '',
+        quantization_level: '',
+      },
+      capabilities: ['completion', 'tools'],
+      model_info: {
+        'general.architecture': 'astron',
+        'astron.context_length': 192000,
+        'general.parameter_count': 0,
+      },
+    };
+  });
+
   server.get('/health', async () => {
     return { status: 'ok', upstream: config.baseUrl };
   });
@@ -86,7 +178,7 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
       error: 'not found',
       method: request.method,
       url: request.url,
-      hint: 'POST /v1/chat/completions is the only supported proxy route',
+      hint: 'Supported routes: POST /v1/chat/completions, POST /ollama/api/chat, POST /ollama/api/generate, GET /ollama/api/tags',
     });
   });
 
@@ -100,6 +192,7 @@ export async function startServer(server: FastifyInstance, cfg: ResolvedConfig):
   try {
     await server.listen({ port: cfg.port, host: '127.0.0.1' });
     server.log.info(`Forwarding /v1/* → ${cfg.baseUrl}`);
+    server.log.info(`Forwarding /ollama/* → ${cfg.baseUrl} (Ollama protocol)`);
     server.log.info(`Config file: ${cfg.configFile ?? '(none)'}`);
     server.log.info(`Log dir: ${cfg.logDir}`);
   } catch (err) {

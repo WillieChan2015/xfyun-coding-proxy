@@ -77,7 +77,37 @@ export async function resolveTargetVersion(currentVersion, versionInput) {
   }
 }
 
-// 预演输出里的“下一步”提示要根据是否存在 blocker 动态变化，避免误导用户继续执行。
+// 从 README 文件中提取当前版本号，用于一致性检查。
+function extractReadmeVersion(content) {
+  const match = content.match(/(?:当前版本|Current version)[\s：:]*`([^`]+)`/);
+  return match ? match[1] : null;
+}
+
+// 检查 README 文件中的版本号是否与 package.json 一致。
+// prepareRelease 会自动同步，所以不一致不阻塞，仅作提醒。
+async function checkReadmeVersionConsistency(currentVersion, options = {}) {
+  const readmePath = options.readmePath ?? 'README.md';
+  const readmeEnPath = options.readmeEnPath ?? 'docs/README.en.md';
+  const warnings = [];
+
+  for (const [label, filePath] of [['README.md', readmePath], ['docs/README.en.md', readmeEnPath]]) {
+    let content;
+    try {
+      content = await readFile(filePath, 'utf8');
+    } catch {
+      continue;
+    }
+
+    const readmeVersion = extractReadmeVersion(content);
+    if (readmeVersion && readmeVersion !== currentVersion) {
+      warnings.push(`${label} 版本号 \`${readmeVersion}\` 与 package.json \`${currentVersion}\` 不一致（release:prepare 会自动同步）`);
+    }
+  }
+
+  return warnings;
+}
+
+// 预演输出里的"下一步"提示要根据是否存在 blocker 动态变化，避免误导用户继续执行。
 function buildNextStep(versionInput, blockers) {
   if (blockers.length > 0) {
     return '先修复阻塞项，再重新执行 dry-run 或切换到 /release。';
@@ -103,6 +133,11 @@ export async function previewReleaseDryRun(versionInput, options = {}) {
   const changelog = await readFile(changelogPath, 'utf8');
   const targetHeadingExists = hasVersionHeading(changelog, targetVersion);
   const blockers = [];
+  const warnings = [];
+
+  // 检查 README 版本号一致性；prepareRelease 会自动同步，所以仅作提醒不阻塞。
+  const readmeWarnings = await checkReadmeVersionConsistency(currentVersion, options);
+  warnings.push(...readmeWarnings);
 
   let preparedChangelog = changelog;
   let releaseNotes = '';
@@ -131,6 +166,7 @@ export async function previewReleaseDryRun(versionInput, options = {}) {
     releaseCommitMessage: `chore: release ${targetTag}`,
     releaseNotes,
     blockers,
+    warnings,
     nextStep: buildNextStep(versionInput, blockers),
     changelogPlan: {
       source: changelogSource,
@@ -171,6 +207,10 @@ export function formatReleaseDryRunPreview(preview) {
 
   if (preview.blockers.length > 0) {
     lines.push('## 阻塞项', '', ...preview.blockers.map((item) => `- ${item}`), '');
+  }
+
+  if (preview.warnings.length > 0) {
+    lines.push('## 提醒', '', ...preview.warnings.map((item) => `- ${item}`), '');
   }
 
   lines.push('## 下一步', '', `- ${preview.nextStep}`);

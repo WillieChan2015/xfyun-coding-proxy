@@ -6,7 +6,7 @@
 
 A local proxy that forwards OpenAI-compatible API requests to iFlytek Xingchen Coding Plan API, for use with OpenCode, Cursor, Trae, and other coding tools.
 
-> **Current version:** `0.0.4-alpha`
+> **Current version:** `0.0.5-beta.1`
 >
 > This project is currently in an alpha preview stage, so APIs, configuration, and behavior may still change before the first stable release.
 >
@@ -41,6 +41,7 @@ OpenCode / Cursor / Trae / Other tools
 - **Logging** — Console (one-line readable) + daily-rotating local files (7-day retention)
 - **Session Summary** — Prints request count, token usage, retries, errors, and uptime on exit
 - **Daily Statistics** — Aggregates usage across sessions per day, persists to local files, and supports CLI history queries
+- **Ollama Protocol Compatibility** — New `/ollama/api/chat`, `/ollama/api/generate`, and `/ollama/api/tags` routes that automatically convert Ollama native protocol requests to OpenAI format for forwarding, and convert responses back to Ollama NDJSON format
 
 ## Runtime Requirements
 
@@ -70,7 +71,7 @@ pnpm start
 pnpm dev
 ```
 
-By default, the proxy listens on `127.0.0.1:3000` and exposes an OpenAI-compatible base URL at `http://127.0.0.1:3000/v1`.
+By default, the proxy listens on `127.0.0.1:3000` and exposes an OpenAI-compatible base URL at `http://127.0.0.1:3000/v1`, and an Ollama protocol base URL at `http://127.0.0.1:3000/ollama`.
 
 ## Global Install
 
@@ -266,6 +267,52 @@ This proxy also includes Trae-specific compatibility handling:
 - filters non-standard SSE events such as `progress_notice` and `context_usage` to avoid stream parsing errors;
 - drops non-standard client headers that may be rejected by the upstream iFlytek service.
 
+### Ollama Clients (Open WebUI / Continue.dev)
+
+The proxy supports the Ollama native protocol. Ollama clients can point their Base URL to the proxy:
+
+- Set Ollama Base URL to `http://localhost:3000/ollama`
+- Supported endpoints: `POST /ollama/api/chat`, `POST /ollama/api/generate`, `GET /ollama/api/tags`
+- Model names are overridden to `astron-code-latest` before forwarding
+- Streaming responses use NDJSON format (`application/x-ndjson`)
+
+Open WebUI: set the Ollama API URL to `http://localhost:3000/ollama`.
+
+Continue.dev example:
+
+```json
+{
+  "models": [{
+    "title": "iFlytek Xingchen (Ollama)",
+    "provider": "ollama",
+    "model": "astron-code-latest",
+    "apiBase": "http://localhost:3000/ollama"
+  }]
+}
+```
+
+### VS Code (Continue.dev / Cline)
+
+**Continue.dev** config example (`~/.continue/config.yaml`):
+
+```yaml
+models:
+  - name: iFlytek Xingchen
+    provider: ollama
+    model: astron-code-latest
+    apiBase: http://localhost:3000/ollama
+    roles:
+      - chat
+      - edit
+```
+
+**Cline** setup steps:
+
+1. Open the Cline sidebar and click the settings icon
+2. Set API Provider to **Ollama**
+3. Set Base URL to `http://localhost:3000/ollama`
+4. Select model `astron-code-latest`
+
 ## Compatibility Notes
 
 - The proxy listens on `127.0.0.1` by default and is intended for local use.
@@ -273,6 +320,9 @@ This proxy also includes Trae-specific compatibility handling:
 - Incoming model values are overridden to `astron-code-latest` before forwarding upstream.
 - String stream flags such as `"true"` are normalized to boolean `true` for upstream compatibility.
 - Error responses are returned in an OpenAI-style `{ error: { message, type, code } }` structure.
+- Ollama protocol routes use the `/ollama` prefix, supporting `/api/chat`, `/api/generate`, and `/api/tags` endpoints.
+- Ollama-specific local parameters (`keep_alive`, `options.top_k`, `options.num_ctx`, etc.) are silently dropped.
+- Ollama streaming responses use NDJSON format (`application/x-ndjson`), unlike OpenAI's SSE format.
 
 ## Project Structure
 
@@ -285,7 +335,12 @@ src/
 ├── config.ts   # Config: CLI args + env vars + config discovery + validation
 ├── stats.ts    # Session stats + daily stats persistence + exit summary
 ├── stats-cmd.ts # CLI stats subcommand handler
-└── util.ts     # Token usage extraction + formatting
+├── util.ts     # Token usage extraction + formatting
+└── ollama/
+    ├── types.ts    # Ollama protocol type definitions
+    ├── request.ts  # Ollama → OpenAI request conversion
+    ├── response.ts # OpenAI → Ollama response conversion (incl. SSE→NDJSON)
+    └── handler.ts  # Ollama route handlers
 ```
 
 ## Logging
