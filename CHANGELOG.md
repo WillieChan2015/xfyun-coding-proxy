@@ -16,6 +16,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed / 修复
 
+## [0.0.5-beta.1] - 2026-05-09
+
+### Added / 新增
+
+- 新增 Ollama 协议兼容路由（`/ollama/api/chat`、`/ollama/api/generate`、`/ollama/api/tags`、`/ollama/api/show`、`/ollama/api/version`），自动将 Ollama 原生请求转换为 OpenAI 格式转发，响应转换回 Ollama NDJSON 格式，支持 Open WebUI、Continue.dev、Cline 等 Ollama 客户端直接接入。
+- Added Ollama protocol routes (`/ollama/api/chat`, `/ollama/api/generate`, `/ollama/api/tags`, `/ollama/api/show`, `/ollama/api/version`) that automatically convert Ollama native requests to OpenAI format for forwarding and convert responses back to Ollama NDJSON format, enabling direct integration with Open WebUI, Continue.dev, Cline, and other Ollama clients.
+- 新增不带 `/ollama` 前缀的 Ollama 路由（`/api/chat`、`/api/generate`、`/api/tags`、`/api/show`、`/api/version`），兼容 Base URL 直接指向代理根路径的工具。
+- Added Ollama routes without the `/ollama` prefix (`/api/chat`, `/api/generate`, `/api/tags`, `/api/show`, `/api/version`) for tools that point the Base URL directly to the proxy root.
+- 新增 `/ollama/v1/chat/completions` 和 `/ollama/v1/models` 路由，兼容 VS Code Continue.dev 等工具在 Ollama 模式下使用的 OpenAI 兼容路径。
+- Added `/ollama/v1/chat/completions` and `/ollama/v1/models` routes for VS Code Continue.dev and similar tools that use OpenAI-compatible paths under Ollama mode.
+- 新增 `extractStreamUsage()` 函数，从 SSE rawChunk 中提取 token 用量，支持标准 OpenAI usage 格式和讯飞 `context_usage` 事件格式。
+- Added `extractStreamUsage()` function to extract token usage from SSE rawChunks, supporting both standard OpenAI usage format and iFlytek `context_usage` event format.
+
+### Changed / 变更
+
+- 路径重写 `rewritePath()` 新增 `/ollama/v1/*` → `/v1/*` → 上游 `/v2/*` 的两步重写，确保 VS Code Ollama OpenAI 兼容路径正确转发。
+- Path rewriting `rewritePath()` now handles `/ollama/v1/*` → `/v1/*` → upstream `/v2/*` in two steps, ensuring VS Code Ollama OpenAI-compatible paths are forwarded correctly.
+- `fetchWithRetry()` 从私有函数改为导出函数，供 Ollama handler 复用。
+- Changed `fetchWithRetry()` from a private function to an exported function for reuse by the Ollama handler.
+- `/api/tags` 和 `/ollama/api/tags` 改为直接返回 mock 数据（模型 `astron-code-latest`），不再请求上游 `/v1/models`。
+- Changed `/api/tags` and `/ollama/api/tags` to return mock data directly (model `astron-code-latest`) instead of proxying to upstream `/v1/models`.
+- `/api/show` 和 `/ollama/api/show` 返回 mock 模型详情，`astron.context_length` 设为 192000（192k）。
+- `/api/show` and `/ollama/api/show` now return mock model details with `astron.context_length` set to 192000 (192k).
+
+### Fixed / 修复
+
+- 修复流式响应 token 用量日志始终显示 `in=0 out=0 total=0` 的问题：讯飞上游在每个 SSE chunk 中包含 `usage`（中间 chunk 为 0，最后 chunk 为真实值），全局匹配取最后一个非零结果，避免中间 chunk 的 0 值覆盖真实值。
+- Fixed stream response token usage logs always showing `in=0 out=0 total=0`: iFlytek upstream includes `usage` in every SSE chunk (intermediate chunks have 0, the final chunk has real values); now uses global regex matching to take the last non-zero result, preventing intermediate 0 values from overwriting real values.
+- 修复 `context_usage` 事件中 `"tokens":N` 被误匹配为 `"total_tokens":0` 的问题，改用 lookbehind 正则 `(?<!total_)"tokens"` 精确匹配独立 `"tokens"` key。
+- Fixed `"tokens":N` in `context_usage` events being incorrectly matched as `"total_tokens":0`; now uses a lookbehind regex `(?<!total_)"tokens"` to precisely match the standalone `"tokens"` key.
+
 ## [0.0.5-alpha] - 2026-05-07
 
 ### Added / 新增
