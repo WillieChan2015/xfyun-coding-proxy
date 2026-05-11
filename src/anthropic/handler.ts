@@ -7,7 +7,7 @@ import {
   isRetryableXfyunError,
   extractXfyunError,
 } from '../proxy';
-import { sessionStats, dailyStats } from '../stats';
+import { sessionStats, dailyStats, incrementProtocolStats } from '../stats';
 import { ANTHROPIC_SSE_EVENTS } from './types';
 import type { AnthropicUsage } from './types';
 
@@ -156,6 +156,8 @@ export async function handleAnthropicMessages(
     dailyStats.requestCount++;
     dailyStats.retries += retries;
     dailyStats.errors++;
+    incrementProtocolStats(sessionStats, 'anthropic', { requestCount: 1, retries, errors: 1 });
+    incrementProtocolStats(dailyStats, 'anthropic', { requestCount: 1, retries, errors: 1 });
 
     reply.status(response.status);
     reply.send(responseBodyText);
@@ -174,6 +176,8 @@ export async function handleAnthropicMessages(
     dailyStats.requestCount++;
     dailyStats.retries += retries;
     dailyStats.errors++;
+    incrementProtocolStats(sessionStats, 'anthropic', { requestCount: 1, retries, errors: 1 });
+    incrementProtocolStats(dailyStats, 'anthropic', { requestCount: 1, retries, errors: 1 });
 
     reply.status(response.status).send({
       type: 'error',
@@ -197,6 +201,8 @@ export async function handleAnthropicMessages(
     dailyStats.requestCount++;
     dailyStats.retries += retries;
     dailyStats.errors++;
+    incrementProtocolStats(sessionStats, 'anthropic', { requestCount: 1, retries, errors: 1 });
+    incrementProtocolStats(dailyStats, 'anthropic', { requestCount: 1, retries, errors: 1 });
 
     reply.status(response.status).send({
       type: 'error',
@@ -287,6 +293,8 @@ export async function handleAnthropicMessages(
       dailyStats.errors++;
       sessionStats.retries += retries;
       dailyStats.retries += retries;
+      incrementProtocolStats(sessionStats, 'anthropic', { requestCount: 1, errors: 1, retries });
+      incrementProtocolStats(dailyStats, 'anthropic', { requestCount: 1, errors: 1, retries });
       return;
     }
 
@@ -305,6 +313,8 @@ export async function handleAnthropicMessages(
     dailyStats.totalPromptTokens += inputTokens ?? 0;
     dailyStats.totalCompletionTokens += outputTokens ?? 0;
     dailyStats.retries += retries;
+    incrementProtocolStats(sessionStats, 'anthropic', { requestCount: 1, totalPromptTokens: inputTokens ?? 0, totalCompletionTokens: outputTokens ?? 0, retries });
+    incrementProtocolStats(dailyStats, 'anthropic', { requestCount: 1, totalPromptTokens: inputTokens ?? 0, totalCompletionTokens: outputTokens ?? 0, retries });
     return;
   }
 
@@ -324,6 +334,8 @@ export async function handleAnthropicMessages(
     sessionStats.errors++;
     dailyStats.requestCount++;
     dailyStats.errors++;
+    incrementProtocolStats(sessionStats, 'anthropic', { requestCount: 1, errors: 1 });
+    incrementProtocolStats(dailyStats, 'anthropic', { requestCount: 1, errors: 1 });
     return;
   }
 
@@ -353,6 +365,20 @@ export async function handleAnthropicMessages(
   dailyStats.totalCompletionTokens += usageInfo.outputTokens ?? 0;
   dailyStats.retries += retries;
   if (!response.ok) dailyStats.errors++;
+  incrementProtocolStats(sessionStats, 'anthropic', {
+    requestCount: 1,
+    totalPromptTokens: usageInfo.inputTokens ?? 0,
+    totalCompletionTokens: usageInfo.outputTokens ?? 0,
+    retries,
+    ...(response.ok ? {} : { errors: 1 }),
+  });
+  incrementProtocolStats(dailyStats, 'anthropic', {
+    requestCount: 1,
+    totalPromptTokens: usageInfo.inputTokens ?? 0,
+    totalCompletionTokens: usageInfo.outputTokens ?? 0,
+    retries,
+    ...(response.ok ? {} : { errors: 1 }),
+  });
 
   reply.status(response.status);
   reply.send(finalBody);

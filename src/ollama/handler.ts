@@ -10,7 +10,7 @@ import {
   extractStreamUsage,
 } from '../proxy';
 import { extractTokenUsage, fmtTokens } from '../util';
-import { sessionStats, dailyStats } from '../stats';
+import { sessionStats, dailyStats, incrementProtocolStats } from '../stats';
 import { convertChatRequest, convertGenerateRequest } from './request';
 import {
   convertChatResponse,
@@ -72,6 +72,8 @@ export async function handleOllamaTags(
       sessionStats.errors++;
       dailyStats.requestCount++;
       dailyStats.errors++;
+      incrementProtocolStats(sessionStats, 'ollama', { requestCount: 1, errors: 1 });
+      incrementProtocolStats(dailyStats, 'ollama', { requestCount: 1, errors: 1 });
       reply.status(response.status).send({ error: body });
       return;
     }
@@ -81,6 +83,8 @@ export async function handleOllamaTags(
 
     sessionStats.requestCount++;
     dailyStats.requestCount++;
+    incrementProtocolStats(sessionStats, 'ollama', { requestCount: 1 });
+    incrementProtocolStats(dailyStats, 'ollama', { requestCount: 1 });
 
     reply.status(200).send(ollamaTags);
   } catch (err) {
@@ -90,6 +94,8 @@ export async function handleOllamaTags(
     sessionStats.errors++;
     dailyStats.requestCount++;
     dailyStats.errors++;
+    incrementProtocolStats(sessionStats, 'ollama', { requestCount: 1, errors: 1 });
+    incrementProtocolStats(dailyStats, 'ollama', { requestCount: 1, errors: 1 });
     reply.status(500).send({ error: msg });
   }
 }
@@ -162,6 +168,8 @@ async function handleOllamaProxy(
     dailyStats.requestCount++;
     dailyStats.retries += retries;
     dailyStats.errors++;
+    incrementProtocolStats(sessionStats, 'ollama', { requestCount: 1, retries, errors: 1 });
+    incrementProtocolStats(dailyStats, 'ollama', { requestCount: 1, retries, errors: 1 });
 
     try {
       const errJson = JSON.parse(responseBodyText) as Record<string, unknown>;
@@ -209,6 +217,18 @@ async function handleOllamaProxy(
       dailyStats.totalPromptTokens += usageInfo.promptTokens ?? 0;
       dailyStats.totalCompletionTokens += usageInfo.completionTokens ?? 0;
       dailyStats.retries += retries;
+      incrementProtocolStats(sessionStats, 'ollama', {
+        requestCount: 1,
+        totalPromptTokens: usageInfo.promptTokens ?? 0,
+        totalCompletionTokens: usageInfo.completionTokens ?? 0,
+        retries,
+      });
+      incrementProtocolStats(dailyStats, 'ollama', {
+        requestCount: 1,
+        totalPromptTokens: usageInfo.promptTokens ?? 0,
+        totalCompletionTokens: usageInfo.completionTokens ?? 0,
+        retries,
+      });
 
       reply.status(200).send(ollamaResponse);
     } catch (err) {
@@ -218,6 +238,8 @@ async function handleOllamaProxy(
       sessionStats.errors++;
       dailyStats.requestCount++;
       dailyStats.errors++;
+      incrementProtocolStats(sessionStats, 'ollama', { requestCount: 1, errors: 1 });
+      incrementProtocolStats(dailyStats, 'ollama', { requestCount: 1, errors: 1 });
       reply.status(500).send({ error: `response parse error: ${msg}` });
     }
     return;
@@ -288,6 +310,8 @@ async function handleOllamaProxy(
       sessionStats.errors++;
       dailyStats.requestCount++;
       dailyStats.errors++;
+      incrementProtocolStats(sessionStats, 'ollama', { requestCount: 1, errors: 1 });
+      incrementProtocolStats(dailyStats, 'ollama', { requestCount: 1, errors: 1 });
     } else {
       const tokenInfo =
         promptTokens !== undefined
@@ -298,6 +322,8 @@ async function handleOllamaProxy(
 
     sessionStats.retries += retries;
     dailyStats.retries += retries;
+    incrementProtocolStats(sessionStats, 'ollama', { retries });
+    incrementProtocolStats(dailyStats, 'ollama', { retries });
     return;
   }
 

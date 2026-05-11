@@ -3,7 +3,9 @@ import { mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   DailyStats,
+  ProtocolStats,
   dailyStats,
+  sessionStats,
   todayStr,
   resolveStatsDir,
   resolveStatsFile,
@@ -12,6 +14,10 @@ import {
   initDailyStats,
   listStatsDates,
   isValidDate,
+  incrementProtocolStats,
+  printDailyStats,
+  printStatsHistory,
+  printSessionSummary,
 } from '../../src/stats';
 
 const TMP_DIR = join(import.meta.dir, '..', 'tmp-stats-test');
@@ -67,6 +73,7 @@ describe('saveDailyStats / loadDailyStats', () => {
       totalCompletionTokens: 8500,
       retries: 3,
       errors: 1,
+      protocols: {},
     };
     saveDailyStats(TMP_DIR, stats);
     const loaded = loadDailyStats(TMP_DIR, '2025-05-06');
@@ -82,6 +89,7 @@ describe('saveDailyStats / loadDailyStats', () => {
       totalCompletionTokens: 0,
       retries: 0,
       errors: 0,
+      protocols: {},
     };
     saveDailyStats(nestedDir, stats);
     expect(existsSync(join(nestedDir, 'stats', '2025-05-06.json'))).toBe(true);
@@ -116,6 +124,7 @@ describe('initDailyStats', () => {
       totalCompletionTokens: 3000,
       retries: 1,
       errors: 0,
+      protocols: {},
     };
     saveDailyStats(TMP_DIR, stats);
     initDailyStats(TMP_DIR);
@@ -154,5 +163,221 @@ describe('listStatsDates', () => {
 
   it('returns empty array for missing directory', () => {
     expect(listStatsDates(join(TMP_DIR, 'nonexistent'))).toEqual([]);
+  });
+});
+
+describe('incrementProtocolStats', () => {
+  it('initializes and increments a new protocol', () => {
+    const stats = { protocols: {} as Record<string, ProtocolStats> };
+    incrementProtocolStats(stats, 'openai', { requestCount: 1, totalPromptTokens: 100 });
+    expect(stats.protocols.openai).toEqual({
+      requestCount: 1,
+      totalPromptTokens: 100,
+      totalCompletionTokens: 0,
+      retries: 0,
+      errors: 0,
+    });
+  });
+
+  it('accumulates into existing protocol', () => {
+    const stats = {
+      protocols: {
+        openai: { requestCount: 5, totalPromptTokens: 500, totalCompletionTokens: 200, retries: 0, errors: 1 },
+      } as Record<string, ProtocolStats>,
+    };
+    incrementProtocolStats(stats, 'openai', { requestCount: 1, errors: 1 });
+    expect(stats.protocols.openai.requestCount).toBe(6);
+    expect(stats.protocols.openai.errors).toBe(2);
+    expect(stats.protocols.openai.totalPromptTokens).toBe(500);
+  });
+
+  it('handles multiple protocols independently', () => {
+    const stats = { protocols: {} as Record<string, ProtocolStats> };
+    incrementProtocolStats(stats, 'openai', { requestCount: 1 });
+    incrementProtocolStats(stats, 'anthropic', { requestCount: 2 });
+    expect(stats.protocols.openai.requestCount).toBe(1);
+    expect(stats.protocols.anthropic.requestCount).toBe(2);
+  });
+});
+
+describe('protocols field initialization', () => {
+  it('sessionStats has empty protocols', () => {
+    expect(sessionStats.protocols).toEqual({});
+  });
+
+  it('loadDailyStats returns empty protocols for old format file', () => {
+    const dir = join(TMP_DIR, 'compat', 'stats');
+    mkdirSync(dir, { recursive: true });
+    const oldFormat = JSON.stringify({
+      date: '2026-05-09',
+      requestCount: 50,
+      totalPromptTokens: 5000,
+      totalCompletionTokens: 0,
+      retries: 0,
+      errors: 0,
+    });
+    writeFileSync(join(dir, '2026-05-09.json'), oldFormat, 'utf-8');
+    const stats = loadDailyStats(join(TMP_DIR, 'compat'), '2026-05-09');
+    expect(stats).not.toBeNull();
+    expect(stats!.protocols).toEqual({});
+  });
+
+  it('loadDailyStats preserves protocols from new format file', () => {
+    const dir = join(TMP_DIR, 'compat2', 'stats');
+    mkdirSync(dir, { recursive: true });
+    const newFormat = JSON.stringify({
+      date: '2026-05-11',
+      requestCount: 303,
+      totalPromptTokens: 12692653,
+      totalCompletionTokens: 73297,
+      retries: 1,
+      errors: 2,
+      protocols: {
+        anthropic: { requestCount: 280, totalPromptTokens: 12650000, totalCompletionTokens: 70000, retries: 1, errors: 2 },
+      },
+    });
+    writeFileSync(join(dir, '2026-05-11.json'), newFormat, 'utf-8');
+    const stats = loadDailyStats(join(TMP_DIR, 'compat2'), '2026-05-11');
+    expect(stats).not.toBeNull();
+    expect(stats!.protocols.anthropic.requestCount).toBe(280);
+  });
+});
+
+function captureOutput(fn: () => void): string {
+  const lines: string[] = [];
+  const orig = console.log;
+  console.log = (...args: unknown[]) => lines.push(args.join(' '));
+  try { fn(); } finally { console.log = orig; }
+  return lines.join('\n');
+}
+
+describe('printDailyStats with protocols', () => {
+  it('includes By Protocol section when protocols exist', () => {
+    const stats: DailyStats = {
+      date: '2026-05-11',
+      requestCount: 303,
+      totalPromptTokens: 12692653,
+      totalCompletionTokens: 73297,
+      retries: 1,
+      errors: 2,
+      protocols: {
+        anthropic: { requestCount: 280, totalPromptTokens: 12650000, totalCompletionTokens: 70000, retries: 1, errors: 2 },
+        openai: { requestCount: 20, totalPromptTokens: 12000, totalCompletionTokens: 1797, retries: 0, errors: 0 },
+        ollama: { requestCount: 3, totalPromptTokens: 1500, totalCompletionTokens: 1500, retries: 0, errors: 0 },
+      },
+    };
+    const output = captureOutput(() => printDailyStats('2026-05-11', stats));
+    expect(output).toContain('By Protocol:');
+    expect(output).toContain('anthropic');
+    expect(output).toContain('openai');
+    expect(output).toContain('ollama');
+  });
+
+  it('omits By Protocol section when protocols is empty', () => {
+    const stats: DailyStats = {
+      date: '2026-05-09',
+      requestCount: 50,
+      totalPromptTokens: 5000,
+      totalCompletionTokens: 0,
+      retries: 0,
+      errors: 0,
+      protocols: {},
+    };
+    const output = captureOutput(() => printDailyStats('2026-05-09', stats));
+    expect(output).not.toContain('By Protocol:');
+  });
+});
+
+describe('printStatsHistory with protocols', () => {
+  it('includes Protocols column with protocol counts', () => {
+    const dir = join(TMP_DIR, 'history-proto', 'stats');
+    mkdirSync(dir, { recursive: true });
+    const stats: DailyStats = {
+      date: '2026-05-11',
+      requestCount: 303,
+      totalPromptTokens: 12692653,
+      totalCompletionTokens: 73297,
+      retries: 1,
+      errors: 2,
+      protocols: {
+        anthropic: { requestCount: 280, totalPromptTokens: 12650000, totalCompletionTokens: 70000, retries: 1, errors: 2 },
+        openai: { requestCount: 20, totalPromptTokens: 12000, totalCompletionTokens: 1797, retries: 0, errors: 0 },
+      },
+    };
+    writeFileSync(join(dir, '2026-05-11.json'), JSON.stringify(stats), 'utf-8');
+    const output = captureOutput(() => printStatsHistory(join(TMP_DIR, 'history-proto')));
+    expect(output).toContain('Protocols');
+    expect(output).toContain('anthropic(280)');
+    expect(output).toContain('openai(20)');
+  });
+
+  it('shows dash when no protocols data', () => {
+    const dir = join(TMP_DIR, 'history-noproto', 'stats');
+    mkdirSync(dir, { recursive: true });
+    const stats: DailyStats = {
+      date: '2026-05-09',
+      requestCount: 50,
+      totalPromptTokens: 5000,
+      totalCompletionTokens: 0,
+      retries: 0,
+      errors: 0,
+      protocols: {},
+    };
+    writeFileSync(join(dir, '2026-05-09.json'), JSON.stringify(stats), 'utf-8');
+    const output = captureOutput(() => printStatsHistory(join(TMP_DIR, 'history-noproto')));
+    expect(output).toContain(' -');
+  });
+});
+
+describe('printSessionSummary with protocols', () => {
+  it('includes By Protocol in session section', () => {
+    sessionStats.requestCount = 15;
+    sessionStats.totalPromptTokens = 5200;
+    sessionStats.totalCompletionTokens = 7300;
+    sessionStats.retries = 3;
+    sessionStats.errors = 1;
+    sessionStats.protocols = {
+      anthropic: { requestCount: 7, totalPromptTokens: 3000, totalCompletionTokens: 7500, retries: 3, errors: 1 },
+      openai: { requestCount: 8, totalPromptTokens: 2200, totalCompletionTokens: -200, retries: 0, errors: 0 },
+    };
+    const output = captureOutput(() => printSessionSummary());
+    expect(output).toContain('By Protocol:');
+    expect(output).toContain('anthropic');
+    expect(output).toContain('openai');
+
+    // Reset sessionStats after test
+    sessionStats.requestCount = 0;
+    sessionStats.totalPromptTokens = 0;
+    sessionStats.totalCompletionTokens = 0;
+    sessionStats.retries = 0;
+    sessionStats.errors = 0;
+    sessionStats.protocols = {};
+  });
+
+  it('includes protocol summary in Today section when protocols exist', () => {
+    const origDate = dailyStats.date;
+    dailyStats.date = '2026-05-11';
+    dailyStats.requestCount = 10;
+    dailyStats.totalPromptTokens = 1000;
+    dailyStats.totalCompletionTokens = 500;
+    dailyStats.protocols = {
+      openai: { requestCount: 7, totalPromptTokens: 700, totalCompletionTokens: 300, retries: 0, errors: 0 },
+      anthropic: { requestCount: 3, totalPromptTokens: 300, totalCompletionTokens: 200, retries: 0, errors: 0 },
+    };
+    const output = captureOutput(() => printSessionSummary());
+    expect(output).toContain('openai(7)');
+    expect(output).toContain('anthropic(3)');
+
+    // Reset
+    dailyStats.date = origDate;
+    dailyStats.requestCount = 0;
+    dailyStats.totalPromptTokens = 0;
+    dailyStats.totalCompletionTokens = 0;
+    dailyStats.protocols = {};
+  });
+
+  it('omits By Protocol when protocols is empty', () => {
+    const output = captureOutput(() => printSessionSummary());
+    expect(output).not.toContain('By Protocol:');
   });
 });

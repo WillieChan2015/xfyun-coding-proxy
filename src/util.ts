@@ -14,7 +14,7 @@ export function extractTokenUsage(body: Record<string, unknown>): {
 
 export function fmtTokens(n: number): string {
   if (n >= 10000) {
-    return `${(n / 1000).toFixed(1)}k(${n})`;
+    return `${(n / 1000).toFixed(1)}k(${n.toLocaleString()})`;
   }
   return String(n);
 }

@@ -9,6 +9,7 @@ export const sessionStats = {
   retries: 0,
   errors: 0,
   startTime: Date.now(),
+  protocols: {} as Record<string, ProtocolStats>,
 };
 
 function fmtUptime(ms: number): string {
@@ -19,6 +20,14 @@ function fmtUptime(ms: number): string {
   return `${Math.floor(min / 60)}h ${min % 60}m`;
 }
 
+export interface ProtocolStats {
+  requestCount: number;
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  retries: number;
+  errors: number;
+}
+
 export interface DailyStats {
   date: string;
   requestCount: number;
@@ -26,6 +35,7 @@ export interface DailyStats {
   totalCompletionTokens: number;
   retries: number;
   errors: number;
+  protocols: Record<string, ProtocolStats>;
 }
 
 export const dailyStats: DailyStats = {
@@ -35,6 +45,7 @@ export const dailyStats: DailyStats = {
   totalCompletionTokens: 0,
   retries: 0,
   errors: 0,
+  protocols: {},
 };
 
 export function todayStr(): string {
@@ -67,6 +78,9 @@ export function loadDailyStats(logDir: string, date: string): DailyStats | null 
       typeof parsed.retries === 'number' &&
       typeof parsed.errors === 'number'
     ) {
+      if (!parsed.protocols) {
+        parsed.protocols = {};
+      }
       return parsed as DailyStats;
     }
     return null;
@@ -98,7 +112,30 @@ export function initDailyStats(logDir: string): void {
     dailyStats.totalCompletionTokens = 0;
     dailyStats.retries = 0;
     dailyStats.errors = 0;
+    dailyStats.protocols = {};
   }
+}
+
+export function incrementProtocolStats(
+  stats: { protocols: Record<string, ProtocolStats> },
+  protocol: string,
+  delta: Partial<ProtocolStats>,
+): void {
+  if (!stats.protocols[protocol]) {
+    stats.protocols[protocol] = {
+      requestCount: 0,
+      totalPromptTokens: 0,
+      totalCompletionTokens: 0,
+      retries: 0,
+      errors: 0,
+    };
+  }
+  const p = stats.protocols[protocol];
+  if (delta.requestCount) p.requestCount += delta.requestCount;
+  if (delta.totalPromptTokens) p.totalPromptTokens += delta.totalPromptTokens;
+  if (delta.totalCompletionTokens) p.totalCompletionTokens += delta.totalCompletionTokens;
+  if (delta.retries) p.retries += delta.retries;
+  if (delta.errors) p.errors += delta.errors;
 }
 
 export function listStatsDates(logDir: string): string[] {
@@ -130,6 +167,17 @@ export function printDailyStats(date: string, stats: DailyStats | null): void {
   console.log(`    Output:       ${fmtTokens(stats.totalCompletionTokens)}`);
   console.log(`  Retries:        ${stats.retries}`);
   console.log(`  Errors:         ${stats.errors}`);
+  const protocolKeys = Object.keys(stats.protocols);
+  if (protocolKeys.length > 0) {
+    console.log('──────────────────────────────────────────────────');
+    console.log('  By Protocol:');
+    const sorted = protocolKeys.sort((a, b) => stats.protocols[b].requestCount - stats.protocols[a].requestCount);
+    for (const name of sorted) {
+      const p = stats.protocols[name];
+      const totalTok = p.totalPromptTokens + p.totalCompletionTokens;
+      console.log(`    ${name.padEnd(14)}${String(p.requestCount).padStart(5)} req   ${fmtTokens(totalTok).padStart(14)} tok   ${String(p.errors).padStart(1)} err`);
+    }
+  }
   console.log('════════════════════════════════════════════════');
   console.log('');
 }
@@ -144,14 +192,21 @@ export function printStatsHistory(logDir: string): void {
   console.log('════════════════════════════════════════════════');
   console.log('  Usage History');
   console.log('════════════════════════════════════════════════');
-  console.log('  Date         Requests   Tokens');
+  console.log('  Date         Requests   Tokens              Protocols');
   for (const date of dates) {
     const stats = loadDailyStats(logDir, date);
     if (!stats) continue;
     const totalTokens = stats.totalPromptTokens + stats.totalCompletionTokens;
     const dateStr = date.padEnd(12);
     const reqStr = String(stats.requestCount).padEnd(10);
-    console.log(`  ${dateStr}${reqStr}${fmtTokens(totalTokens)}`);
+    const tokStr = fmtTokens(totalTokens).padEnd(20);
+    const protocolKeys = Object.keys(stats.protocols);
+    const protocolsStr = protocolKeys.length > 0
+      ? protocolKeys.sort((a, b) => stats.protocols[b].requestCount - stats.protocols[a].requestCount)
+          .map(name => `${name}(${stats.protocols[name].requestCount})`)
+          .join(' ')
+      : '-';
+    console.log(`  ${dateStr}${reqStr}${tokStr}${protocolsStr}`);
   }
   console.log('════════════════════════════════════════════════');
   console.log('');
@@ -173,12 +228,32 @@ export function printSessionSummary(): void {
   console.log(`  Errors:         ${sessionStats.errors}`);
   console.log(`  Uptime:         ${fmtUptime(uptime)}`);
 
+  const sessionProtocolKeys = Object.keys(sessionStats.protocols);
+  if (sessionProtocolKeys.length > 0) {
+    console.log('──────────────────────────────────────────────────');
+    console.log('  By Protocol:');
+    const sorted = sessionProtocolKeys.sort((a, b) => sessionStats.protocols[b].requestCount - sessionStats.protocols[a].requestCount);
+    for (const name of sorted) {
+      const p = sessionStats.protocols[name];
+      const totalTok = p.totalPromptTokens + p.totalCompletionTokens;
+      console.log(`    ${name.padEnd(14)}${String(p.requestCount).padStart(5)} req   ${fmtTokens(totalTok).padStart(14)} tok   ${String(p.errors).padStart(1)} err`);
+    }
+  }
+
   if (dailyStats.date) {
     const totalDailyTokens = dailyStats.totalPromptTokens + dailyStats.totalCompletionTokens;
     console.log('──────────────────────────────────────────────────');
     console.log(`  Today (${dailyStats.date})`);
     console.log(`  Requests:       ${dailyStats.requestCount}`);
     console.log(`  Tokens:         ${fmtTokens(totalDailyTokens)}`);
+    const todayProtocolKeys = Object.keys(dailyStats.protocols);
+    if (todayProtocolKeys.length > 0) {
+      const protocolSummary = todayProtocolKeys
+        .sort((a, b) => dailyStats.protocols[b].requestCount - dailyStats.protocols[a].requestCount)
+        .map(name => `${name}(${dailyStats.protocols[name].requestCount})`)
+        .join(' ');
+      console.log(`    ${protocolSummary}`);
+    }
   }
 
   console.log('════════════════════════════════════════════════');

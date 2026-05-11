@@ -1,7 +1,7 @@
 import { FastifyRequest, FastifyReply, FastifyInstance } from 'fastify';
 import { config, DEFAULT_MODEL } from './config';
 import { extractTokenUsage, fmtTokens } from './util';
-import { sessionStats, dailyStats } from './stats';
+import { sessionStats, dailyStats, incrementProtocolStats } from './stats';
 
 // HTTP 状态码级别的重试条件：429 限流、503 服务过载
 export const RETRYABLE_STATUS_CODES = new Set([429, 503]);
@@ -488,6 +488,8 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     dailyStats.requestCount++;
     dailyStats.retries += retries;
     dailyStats.errors++;
+    incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, retries, errors: 1 });
+    incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, retries, errors: 1 });
 
     reply.status(response.status);
     reply.send(responseBodyText);
@@ -506,6 +508,8 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     dailyStats.requestCount++;
     dailyStats.retries += retries;
     dailyStats.errors++;
+    incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, retries, errors: 1 });
+    incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, retries, errors: 1 });
 
     reply.status(response.status);
     reply.send({
@@ -530,6 +534,8 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     dailyStats.requestCount++;
     dailyStats.retries += retries;
     dailyStats.errors++;
+    incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, retries, errors: 1 });
+    incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, retries, errors: 1 });
 
     reply.status(response.status);
     reply.send({
@@ -625,6 +631,8 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
       dailyStats.errors++;
       sessionStats.retries += retries;
       dailyStats.retries += retries;
+      incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, errors: 1, retries });
+      incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, errors: 1, retries });
       return;
     }
 
@@ -643,6 +651,8 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     dailyStats.totalPromptTokens += promptTokens ?? 0;
     dailyStats.totalCompletionTokens += completionTokens ?? 0;
     dailyStats.retries += retries;
+    incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, totalPromptTokens: promptTokens ?? 0, totalCompletionTokens: completionTokens ?? 0, retries });
+    incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, totalPromptTokens: promptTokens ?? 0, totalCompletionTokens: completionTokens ?? 0, retries });
     return;
   }
 
@@ -662,6 +672,8 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     sessionStats.errors++;
     dailyStats.requestCount++;
     dailyStats.errors++;
+    incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, errors: 1 });
+    incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, errors: 1 });
     return;
   }
 
@@ -700,6 +712,8 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
   dailyStats.totalCompletionTokens += usageInfo.completionTokens ?? 0;
   dailyStats.retries += retries;
   if (!response.ok) dailyStats.errors++;
+  incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, totalPromptTokens: usageInfo.promptTokens ?? 0, totalCompletionTokens: usageInfo.completionTokens ?? 0, retries, ...(response.ok ? {} : { errors: 1 }) });
+  incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, totalPromptTokens: usageInfo.promptTokens ?? 0, totalCompletionTokens: usageInfo.completionTokens ?? 0, retries, ...(response.ok ? {} : { errors: 1 }) });
 
   reply.status(response.status);
   reply.send(responseBody);
@@ -731,6 +745,8 @@ export async function handleGetProxy(
 
   sessionStats.requestCount++;
   dailyStats.requestCount++;
+  incrementProtocolStats(sessionStats, 'openai', { requestCount: 1 });
+  incrementProtocolStats(dailyStats, 'openai', { requestCount: 1 });
 
   reply.status(response.status);
   reply.header('Content-Type', response.headers.get('content-type') || 'application/json');
