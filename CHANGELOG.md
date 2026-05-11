@@ -16,6 +16,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed / 修复
 
+## [0.0.5-beta.3] - 2026-05-11
+
+### Added / 新增
+
+- 新增 Anthropic Messages API 协议路由（`POST /anthropic/v1/messages`、`GET /anthropic/v1/models`），支持 Claude Code、Cursor 等 Anthropic 协议客户端直接接入，自动将请求转发到讯飞 Anthropic 协议端点。
+- Added Anthropic Messages API protocol routes (`POST /anthropic/v1/messages`, `GET /anthropic/v1/models`) enabling Claude Code, Cursor, and other Anthropic-protocol clients to connect directly, forwarding requests to the iFlytek Anthropic protocol endpoint.
+- 新增 Anthropic SSE 事件白名单（`ANTHROPIC_SSE_EVENTS`），过滤 `progress_notice`、`context_usage` 等非标准事件，只转发 Anthropic 标准事件类型（`message_start`、`content_block_delta`、`message_delta` 等）。
+- Added Anthropic SSE event whitelist (`ANTHROPIC_SSE_EVENTS`) that filters non-standard events like `progress_notice` and `context_usage`, forwarding only standard Anthropic event types (`message_start`, `content_block_delta`, `message_delta`, etc.).
+- 新增 Anthropic 协议 token 用量提取（`input_tokens` / `output_tokens`），支持流式和非流式响应的用量统计。
+- Added Anthropic protocol token usage extraction (`input_tokens` / `output_tokens`) with support for both streaming and non-streaming response usage statistics.
+- 新增 `XFYUN_ANTHROPIC_BASE_URL` 配置项和 `--anthropic-base-url` CLI 选项，支持自定义讯飞 Anthropic 协议端点地址。
+- Added `XFYUN_ANTHROPIC_BASE_URL` config option and `--anthropic-base-url` CLI flag for customizing the iFlytek Anthropic protocol endpoint URL.
+- 新增 `setup` CLI 子命令，交互式一键配置 AI 编程工具使用本地代理，当前支持 Claude Code（自动写入 `settings.json` 或 `.env`，含备份机制）。
+- Added `setup` CLI subcommand for interactive one-click configuration of AI coding tools to use the local proxy, currently supporting Claude Code (auto-writing `settings.json` or `.env` with backup mechanism).
+- 新增 `setup restore` CLI 子命令，支持查看和恢复由 `setup` 命令创建的配置备份文件。
+- Added `setup restore` CLI subcommand to view and restore configuration backup files created by the `setup` command.
+- 新增 `--non-interactive` 选项，支持在 CI/CD 等非交互环境中自动执行 `setup` 和 `setup restore`。
+- Added `--non-interactive` option for running `setup` and `setup restore` automatically in CI/CD and other non-interactive environments.
+
+### Changed / 变更
+
+- `SSEFilter` 构造函数新增可选 `allowedEvents` 参数，支持不同协议使用不同的 SSE 事件白名单（OpenAI 用 `['message']`，Anthropic 用 7 种标准事件类型）。
+- `SSEFilter` constructor now accepts an optional `allowedEvents` parameter, allowing different protocols to use different SSE event whitelists (OpenAI uses `['message']`, Anthropic uses 7 standard event types).
+- Ollama 请求/响应转换模块统一使用 `DEFAULT_MODEL` 常量替代硬编码模型名。
+- Ollama request/response conversion modules now use the `DEFAULT_MODEL` constant instead of hardcoded model names.
+- 启动日志新增 Anthropic 协议转发目标地址输出。
+- Startup logs now include the Anthropic protocol forwarding target URL.
+
+### Fixed / 修复
+
 ## [0.0.5-beta.2] - 2026-05-11
 
 ### Added / 新增
