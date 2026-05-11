@@ -291,7 +291,7 @@ Continue.dev example:
 }
 ```
 
-### VS Code (Continue.dev / Cline)
+### VS Code (Continue.dev / Cline / Copilot)
 
 **Continue.dev** config example (`~/.continue/config.yaml`):
 
@@ -312,6 +312,15 @@ models:
 2. Set API Provider to **Ollama**
 3. Set Base URL to `http://localhost:3000/ollama`
 4. Select model `astron-code-latest`
+
+**GitHub Copilot** custom model (requires VS Code 1.104+ / Insiders):
+
+1. Open Copilot Chat, click the model picker → **Manage Models…**
+2. Click **+ Add Models…** and select **OpenAI Compatible**
+3. Enter a provider name (e.g. `iFlytek`), and use a placeholder API key (e.g. `local-proxy`)
+4. Enter the custom Base URL: `http://localhost:3000/ollama`
+5. After saving, Copilot will automatically refresh the model list and display the new model
+6. Enable the model in the model management list, and it will appear in the Chat model picker
 
 ## Compatibility Notes
 
