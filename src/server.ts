@@ -1,9 +1,10 @@
 import path from 'node:path';
 import Fastify, { FastifyInstance, FastifyError, FastifyRequest, FastifyReply } from 'fastify';
 import cors from '@fastify/cors';
-import { ResolvedConfig, config } from './config';
+import { ResolvedConfig, config, DEFAULT_MODEL } from './config';
 import { handleProxy, handleGetProxy } from './proxy';
 import { handleOllamaChat, handleOllamaGenerate } from './ollama/handler';
+import { handleAnthropicMessages } from './anthropic/handler';
 import { printSessionSummary, initDailyStats, saveDailyStats, dailyStats } from './stats';
 let flushTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -76,6 +77,20 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
   server.post('/v1/*', handleProxy);
   server.get('/v1/*', handleGetProxy);
 
+  // Anthropic 协议路由：带 /anthropic 前缀（Base URL = http://localhost:3000/anthropic）
+  server.post('/anthropic/v1/messages', handleAnthropicMessages);
+  server.get('/anthropic/v1/models', async () => {
+    return {
+      object: 'list',
+      data: [{
+        id: DEFAULT_MODEL,
+        object: 'model',
+        created: 1_700_000_000,
+        owned_by: 'xfyun',
+      }],
+    };
+  });
+
   // Ollama 协议路由：带 /ollama 前缀（Base URL = http://localhost:3000/ollama）
   server.post('/ollama/api/chat', handleOllamaChat);
   server.post('/ollama/api/generate', handleOllamaGenerate);
@@ -85,8 +100,8 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
   server.get('/ollama/api/tags', async () => {
     return {
       models: [{
-        name: 'astron-code-latest',
-        model: 'astron-code-latest',
+        name: DEFAULT_MODEL,
+        model: DEFAULT_MODEL,
         modified_at: new Date().toISOString(),
         size: 0,
         digest: '',
@@ -129,8 +144,8 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
   server.get('/api/tags', async () => {
     return {
       models: [{
-        name: 'astron-code-latest',
-        model: 'astron-code-latest',
+        name: DEFAULT_MODEL,
+        model: DEFAULT_MODEL,
         modified_at: new Date().toISOString(),
         size: 0,
         digest: '',
@@ -178,7 +193,7 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
       error: 'not found',
       method: request.method,
       url: request.url,
-      hint: 'Supported routes: POST /v1/chat/completions, POST /ollama/api/chat, POST /ollama/api/generate, GET /ollama/api/tags',
+      hint: 'Supported routes: POST /v1/chat/completions, POST /anthropic/v1/messages, POST /ollama/api/chat, POST /ollama/api/generate, GET /ollama/api/tags',
     });
   });
 
@@ -193,6 +208,7 @@ export async function startServer(server: FastifyInstance, cfg: ResolvedConfig):
     await server.listen({ port: cfg.port, host: '127.0.0.1' });
     server.log.info(`Forwarding /v1/* → ${cfg.baseUrl}`);
     server.log.info(`Forwarding /ollama/* → ${cfg.baseUrl} (Ollama protocol)`);
+    server.log.info(`Forwarding /anthropic/* → ${cfg.anthropicBaseUrl} (Anthropic protocol)`);
     server.log.info(`Config file: ${cfg.configFile ?? '(none)'}`);
     server.log.info(`Log dir: ${cfg.logDir}`);
   } catch (err) {

@@ -1,6 +1,5 @@
+import { DEFAULT_MODEL } from '../config';
 import type { OllamaEndpoint } from './types';
-
-const MODEL_OVERRIDE = 'astron-code-latest';
 
 /**
  * 将 OpenAI 非流式 chat completion 响应转换为 Ollama /api/chat 响应
@@ -12,7 +11,7 @@ export function convertChatResponse(openai: Record<string, unknown>): Record<str
   const usage = openai.usage as Record<string, unknown> | undefined;
 
   return {
-    model: MODEL_OVERRIDE,
+    model: DEFAULT_MODEL,
     created_at: new Date().toISOString(),
     message: message ?? { role: 'assistant', content: '' },
     done: true,
@@ -33,7 +32,7 @@ export function convertGenerateResponse(openai: Record<string, unknown>): Record
   const usage = openai.usage as Record<string, unknown> | undefined;
 
   return {
-    model: MODEL_OVERRIDE,
+    model: DEFAULT_MODEL,
     created_at: new Date().toISOString(),
     response: (message?.content as string) ?? '',
     done: true,
@@ -50,8 +49,8 @@ export function convertTagsResponse(openai: Record<string, unknown>): { models: 
   const data = (openai.data as Array<Record<string, unknown>>) ?? [];
   return {
     models: data.map((m) => ({
-      name: m.id ?? MODEL_OVERRIDE,
-      model: m.id ?? MODEL_OVERRIDE,
+      name: m.id ?? DEFAULT_MODEL,
+      model: m.id ?? DEFAULT_MODEL,
       modified_at: m.created ? new Date((m.created as number) * 1000).toISOString() : new Date().toISOString(),
       size: 0,
       digest: '',
@@ -140,7 +139,7 @@ export class SSEToNDJSONConverter {
   /** 构建增量内容 NDJSON 行（done: false） */
   private buildChunk(content: string, done: boolean): string {
     const base = {
-      model: MODEL_OVERRIDE,
+      model: DEFAULT_MODEL,
       created_at: new Date().toISOString(),
       done,
     };
@@ -154,7 +153,7 @@ export class SSEToNDJSONConverter {
   /** 构建结束 NDJSON 行（done: true），附带 done_reason 和 token 用量 */
   private buildDoneChunk(doneReason: string, usage?: Record<string, unknown>): string {
     const base: Record<string, unknown> = {
-      model: MODEL_OVERRIDE,
+      model: DEFAULT_MODEL,
       created_at: new Date().toISOString(),
       done: true,
       done_reason: doneReason,

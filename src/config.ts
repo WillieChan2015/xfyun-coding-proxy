@@ -5,10 +5,14 @@ import { createInterface } from 'node:readline/promises';
 import dotenv from 'dotenv';
 import { CliOptions } from './cli';
 
+/** 代理强制覆盖的模型 ID，所有协议路由统一使用 */
+export const DEFAULT_MODEL = 'astron-code-latest';
+
 export interface ResolvedConfig {
   port: number;
   apiKey: string;
   baseUrl: string;
+  anthropicBaseUrl: string;
   maxRetries: number;
   retryDelay: number;
   verbose: boolean;
@@ -25,6 +29,7 @@ export let config: ResolvedConfig = {
   port: 3000,
   apiKey: '',
   baseUrl: 'https://maas-coding-api.cn-huabei-1.xf-yun.com/v2',
+  anthropicBaseUrl: 'https://maas-coding-api.cn-huabei-1.xf-yun.com/anthropic',
   maxRetries: 3,
   retryDelay: 1000,
   verbose: false,
@@ -97,6 +102,10 @@ export function loadConfig(cliOpts: CliOptions): ResolvedConfig {
       cliOpts.baseUrl ??
       process.env.XFYUN_BASE_URL ??
       'https://maas-coding-api.cn-huabei-1.xf-yun.com/v2',
+    anthropicBaseUrl:
+      cliOpts.anthropicBaseUrl ??
+      process.env.XFYUN_ANTHROPIC_BASE_URL ??
+      'https://maas-coding-api.cn-huabei-1.xf-yun.com/anthropic',
     maxRetries: cliOpts.maxRetries ?? parseInt(process.env.MAX_RETRIES || '3', 10),
     retryDelay: cliOpts.retryDelay ?? parseInt(process.env.RETRY_DELAY_MS || '1000', 10),
     verbose: cliOpts.verbose ?? process.env.VERBOSE === 'true',

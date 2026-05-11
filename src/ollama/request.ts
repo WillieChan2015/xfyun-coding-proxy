@@ -1,6 +1,5 @@
+import { DEFAULT_MODEL } from '../config';
 import type { OllamaChatRequest, OllamaGenerateRequest, OllamaOptions } from './types';
-
-const MODEL_OVERRIDE = 'astron-code-latest';
 
 /**
  * 将 Ollama format 字段映射为 OpenAI response_format
@@ -38,7 +37,7 @@ function liftOptions(options: OllamaOptions | undefined): Record<string, unknown
  */
 export function convertChatRequest(ollama: OllamaChatRequest): Record<string, unknown> {
   const result: Record<string, unknown> = {
-    model: MODEL_OVERRIDE,
+    model: DEFAULT_MODEL,
     messages: ollama.messages,
     ...liftOptions(ollama.options),
   };
@@ -64,7 +63,7 @@ export function convertGenerateRequest(ollama: OllamaGenerateRequest): Record<st
   messages.push({ role: 'user', content: ollama.prompt });
 
   const result: Record<string, unknown> = {
-    model: MODEL_OVERRIDE,
+    model: DEFAULT_MODEL,
     messages,
     ...liftOptions(ollama.options),
   };

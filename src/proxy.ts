@@ -1,5 +1,5 @@
 import { FastifyRequest, FastifyReply, FastifyInstance } from 'fastify';
-import { config } from './config';
+import { config, DEFAULT_MODEL } from './config';
 import { extractTokenUsage, fmtTokens } from './util';
 import { sessionStats, dailyStats } from './stats';
 
@@ -210,6 +210,11 @@ export const ALLOWED_SSE_EVENTS = new Set(['message']);
 export class SSEFilter {
   private pendingLine = '';
   private skipCurrentEvent = false;
+  private allowedEvents: Set<string>;
+
+  constructor(allowedEvents: Set<string> = ALLOWED_SSE_EVENTS) {
+    this.allowedEvents = allowedEvents;
+  }
 
   /**
    * 过滤一个 chunk 中的 SSE 事件
@@ -234,7 +239,7 @@ export class SSEFilter {
     for (const line of lines) {
       if (line.startsWith('event:')) {
         const eventType = line.slice(6).trim();
-        this.skipCurrentEvent = !ALLOWED_SSE_EVENTS.has(eventType);
+        this.skipCurrentEvent = !this.allowedEvents.has(eventType);
         if (this.skipCurrentEvent) {
           log.debug(`filtered SSE event: ${eventType}`);
           continue;
@@ -415,7 +420,7 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     body.stream = body.stream === 'true';
   }
 
-  const model = 'astron-code-latest';
+  const model = DEFAULT_MODEL;
   if (body) {
     body.model = model;
   }

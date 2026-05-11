@@ -4,14 +4,18 @@ export interface CliOptions {
   port?: number;
   apiKey?: string;
   baseUrl?: string;
+  anthropicBaseUrl?: string;
   maxRetries?: number;
   retryDelay?: number;
   verbose: boolean;
   logDir?: string;
   config?: string;
-  command?: 'start' | 'stats';
+  command?: 'start' | 'stats' | 'setup' | 'setup-restore';
   statsDate?: string;
   statsList?: boolean;
+  setupNonInteractive?: boolean;
+  setupRestoreList?: boolean;
+  setupRestoreLatest?: boolean;
 }
 
 export function parseCli(): CliOptions {
@@ -32,6 +36,10 @@ export function parseCli(): CliOptions {
       '--base-url <url>',
       'iFlytek API base URL (default: $XFYUN_BASE_URL)',
     )
+    .option(
+      '--anthropic-base-url <url>',
+      'iFlytek Anthropic API base URL (default: $XFYUN_ANTHROPIC_BASE_URL)',
+    )
     .option('--max-retries <n>', 'max retry attempts (default: $MAX_RETRIES or 3)')
     .option('--retry-delay <ms>', 'initial retry delay in ms (default: $RETRY_DELAY_MS or 1000)')
     .option('--log-dir <dir>', 'log output directory (default: $XFYUN_LOG_DIR or XDG state dir)')
@@ -43,6 +51,7 @@ export function parseCli(): CliOptions {
         port: opts.port ? parseInt(opts.port, 10) : undefined,
         apiKey: opts.apiKey || undefined,
         baseUrl: opts.baseUrl || undefined,
+        anthropicBaseUrl: opts.anthropicBaseUrl || undefined,
         maxRetries: opts.maxRetries ? parseInt(opts.maxRetries, 10) : undefined,
         retryDelay: opts.retryDelay ? parseInt(opts.retryDelay, 10) : undefined,
         verbose: opts.verbose ?? false,
@@ -62,6 +71,38 @@ export function parseCli(): CliOptions {
         command: 'stats',
         statsDate: opts.date || undefined,
         statsList: opts.list ?? false,
+      };
+    });
+
+  const setupCmd = program
+    .command('setup')
+    .description('Configure AI coding tools to use this proxy')
+    .option('-p, --port <port>', 'proxy listen port (default: $PORT or 3000)')
+    .option('-k, --api-key <key>', 'iFlytek Coding Plan API key (default: $XFYUN_API_KEY)')
+    .option('--non-interactive', 'skip interactive confirmations')
+    .action((opts) => {
+      result = {
+        command: 'setup',
+        port: opts.port ? parseInt(opts.port, 10) : undefined,
+        apiKey: opts.apiKey || undefined,
+        setupNonInteractive: opts.nonInteractive ?? false,
+        verbose: false,
+      };
+    });
+
+  setupCmd
+    .command('restore')
+    .description('View and restore backup configuration files')
+    .option('--list', 'list backups only')
+    .option('--latest', 'restore the latest backup')
+    .option('--non-interactive', 'skip interactive confirmations')
+    .action((opts) => {
+      result = {
+        command: 'setup-restore',
+        setupNonInteractive: opts.nonInteractive ?? false,
+        setupRestoreList: opts.list ?? false,
+        setupRestoreLatest: opts.latest ?? false,
+        verbose: false,
       };
     });
 

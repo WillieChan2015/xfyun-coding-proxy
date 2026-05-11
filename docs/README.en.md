@@ -27,7 +27,25 @@ OpenCode / Cursor / Trae / Other tools
    │  5. 429/503 auto-retry  │
    └─────────────────────────┘
         ↓  https://maas-coding-api.cn-huabei-1.xf-yun.com/v2/chat/completions
-   iFlytek Xingchen Coding Plan API
+    iFlytek Xingchen Coding Plan API
+```
+
+### Anthropic Protocol
+
+```
+Claude Code / Cursor (Anthropic mode)
+        ↓  http://localhost:3000/anthropic/v1/messages
+   ┌─────────────────────────┐
+   │   Fastify Proxy          │
+   │                         │
+   │  1. API Key injection   │
+   │  2. Model override      │
+   │  3. Forward to iFlytek  │
+   │  4. SSE stream passthru │
+   │  5. 429/503/529 auto-retry│
+   └─────────────────────────┘
+        ↓  https://maas-coding-api.cn-huabei-1.xf-yun.com/anthropic/v1/messages
+   iFlytek Anthropic-compatible endpoint
 ```
 
 ## Features
@@ -42,6 +60,8 @@ OpenCode / Cursor / Trae / Other tools
 - **Session Summary** — Prints request count, token usage, retries, errors, and uptime on exit
 - **Daily Statistics** — Aggregates usage across sessions per day, persists to local files, and supports CLI history queries
 - **Ollama Protocol Compatibility** — New `/ollama/api/chat`, `/ollama/api/generate`, and `/ollama/api/tags` routes that automatically convert Ollama native protocol requests to OpenAI format for forwarding, and convert responses back to Ollama NDJSON format
+- **Anthropic Protocol Compatibility** — Added `/anthropic/v1/messages` route, passthrough Anthropic Messages API requests to Xfyun Anthropic-compatible endpoint, supporting Claude Code / Cursor (Anthropic mode) and other clients
+- **One-Click Client Setup** — Added `maas-coding-proxy setup` subcommand for interactive configuration of Claude Code and other clients, with automatic installation detection, change preview, backup, and config writing
 
 ## Runtime Requirements
 
@@ -71,7 +91,39 @@ pnpm start
 pnpm dev
 ```
 
-By default, the proxy listens on `127.0.0.1:3000` and exposes an OpenAI-compatible base URL at `http://127.0.0.1:3000/v1`, and an Ollama protocol base URL at `http://127.0.0.1:3000/ollama`.
+By default, the proxy listens on `127.0.0.1:3000` and exposes an OpenAI-compatible base URL at `http://127.0.0.1:3000/v1`, an Ollama protocol base URL at `http://127.0.0.1:3000/ollama`, and an Anthropic protocol base URL at `http://127.0.0.1:3000/anthropic`.
+
+### One-Click Claude Code Setup
+
+```bash
+maas-coding-proxy setup
+```
+
+Interactive setup wizard for configuring Claude Code to use the local proxy:
+1. Choose client type (Claude Code / Cursor / Trae / OpenCode)
+2. Auto-detect Claude Code installation
+3. Preview configuration changes
+4. Choose write method (settings.json or .env)
+5. Back up original config and write changes
+
+Non-interactive mode (for scripted scenarios):
+
+```bash
+maas-coding-proxy setup --non-interactive
+```
+
+### View and Restore Backups
+
+```bash
+# List all backups
+maas-coding-proxy setup restore --list
+
+# Interactively select and restore a backup
+maas-coding-proxy setup restore
+
+# Restore the latest backup (non-interactive)
+maas-coding-proxy setup restore --latest --non-interactive
+```
 
 ## Global Install
 
@@ -152,6 +204,7 @@ Via `.env` file or environment variables:
 | `PORT` | `3000` | Proxy listen port |
 | `XFYUN_API_KEY` | Required | iFlytek Coding Plan API Key |
 | `XFYUN_BASE_URL` | `https://maas-coding-api.cn-huabei-1.xf-yun.com/v2` | iFlytek API Base URL |
+| `XFYUN_ANTHROPIC_BASE_URL` | `https://maas-coding-api.cn-huabei-1.xf-yun.com/anthropic` | iFlytek Anthropic protocol endpoint Base URL |
 | `MAX_RETRIES` | `3` | Max retry attempts |
 | `RETRY_DELAY_MS` | `1000` | Initial retry delay (ms) |
 | `XFYUN_LOG_DIR` | XDG state dir | Log output directory |
@@ -167,6 +220,7 @@ You can also configure the proxy via CLI flags:
 | `-p, --port <port>` | Proxy listen port | `3000` |
 | `-k, --api-key <key>` | iFlytek Coding Plan API key | none |
 | `--base-url <url>` | iFlytek API base URL | `https://maas-coding-api.cn-huabei-1.xf-yun.com/v2` |
+| `--anthropic-base-url <url>` | iFlytek Anthropic API base URL | `https://maas-coding-api.cn-huabei-1.xf-yun.com/anthropic` |
 | `--max-retries <n>` | Max retry attempts | `3` |
 | `--retry-delay <ms>` | Initial retry delay in milliseconds | `1000` |
 | `--log-dir <dir>` | Log output directory | XDG state dir |
@@ -291,6 +345,16 @@ Continue.dev example:
 }
 ```
 
+### Claude Code
+
+Point the Anthropic API configuration to the proxy:
+
+- Set Base URL to `http://localhost:3000/anthropic`
+- Use a placeholder API key (e.g. `local-proxy`); the proxy will replace it with the real key on forwarding
+- Model names are overridden to `astron-code-latest` before forwarding
+
+> You can also use `maas-coding-proxy setup` to complete the above configuration automatically.
+
 ### VS Code (Continue.dev / Cline / Copilot)
 
 **Continue.dev** config example (`~/.continue/config.yaml`):
@@ -332,6 +396,11 @@ models:
 - Ollama protocol routes use the `/ollama` prefix, supporting `/api/chat`, `/api/generate`, and `/api/tags` endpoints.
 - Ollama-specific local parameters (`keep_alive`, `options.top_k`, `options.num_ctx`, etc.) are silently dropped.
 - Ollama streaming responses use NDJSON format (`application/x-ndjson`), unlike OpenAI's SSE format.
+- Anthropic protocol routes use the `/anthropic` prefix, supporting the `/v1/messages` endpoint.
+- Anthropic protocol features such as Extended Thinking, Vision, and Tool Use are passed through without protocol conversion.
+- Anthropic streaming responses use SSE format (`text/event-stream`), unlike Ollama's NDJSON format.
+- The `setup` subcommand supports configuring Claude Code; support for more clients will be added in future releases. `setup restore` allows viewing and restoring backup configurations.
+- Config files are automatically backed up before writing (backup filenames include a timestamp).
 
 ## Project Structure
 
@@ -344,12 +413,20 @@ src/
 ├── config.ts   # Config: CLI args + env vars + config discovery + validation
 ├── stats.ts    # Session stats + daily stats persistence + exit summary
 ├── stats-cmd.ts # CLI stats subcommand handler
+├── setup-cmd.ts # setup subcommand handler
 ├── util.ts     # Token usage extraction + formatting
 └── ollama/
     ├── types.ts    # Ollama protocol type definitions
     ├── request.ts  # Ollama → OpenAI request conversion
     ├── response.ts # OpenAI → Ollama response conversion (incl. SSE→NDJSON)
     └── handler.ts  # Ollama route handlers
+└── anthropic/
+    ├── types.ts    # Anthropic protocol type definitions
+    └── handler.ts  # Anthropic route handlers
+└── setup/
+    ├── types.ts        # Client type definitions and registry
+    ├── claude-code.ts  # Claude Code configuration logic
+    └── restore-cmd.ts  # setup restore subcommand handler
 ```
 
 ## Logging
