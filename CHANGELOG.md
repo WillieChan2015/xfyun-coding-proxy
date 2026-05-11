@@ -12,6 +12,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added / 新增
 
+### Changed / 变更
+
+### Fixed / 修复
+
+## [0.0.5-beta.2] - 2026-05-11
+
+### Added / 新增
+
 - 新增 VS Code GitHub Copilot 自定义模型配置示例，支持通过 OpenAI Compatible 供应商接入代理。
 - Added VS Code GitHub Copilot custom model configuration example, supporting proxy connection via the OpenAI Compatible provider.
 
