@@ -50,7 +50,7 @@ describe('Claude Code 配置逻辑', () => {
 
   describe('previewClaudeCodeSettings', () => {
     it('generates diffs for config', () => {
-      const preview = previewClaudeCodeSettings(3000, 'sk-test-key-12345678');
+      const preview = previewClaudeCodeSettings(3000, 'sk-test-key-12345678', '/nonexistent/path/settings.json');
       expect(preview.diffs.length).toBe(3);
       expect(preview.diffs[0].path).toBe('env.ANTHROPIC_BASE_URL');
       expect(preview.diffs[0].newValue).toBe('http://127.0.0.1:3000/anthropic');
@@ -60,7 +60,7 @@ describe('Claude Code 配置逻辑', () => {
     });
 
     it('uses custom port in base URL', () => {
-      const preview = previewClaudeCodeSettings(8080, 'sk-test-key-12345678');
+      const preview = previewClaudeCodeSettings(8080, 'sk-test-key-12345678', '/nonexistent/path/settings.json');
       expect(preview.diffs[0].newValue).toBe('http://127.0.0.1:8080/anthropic');
     });
   });

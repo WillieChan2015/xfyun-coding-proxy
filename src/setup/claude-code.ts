@@ -237,9 +237,10 @@ export function maskApiKey(key: string): string {
 export function previewClaudeCodeSettings(
   port: number,
   apiKey: string,
+  settingsPath?: string,
 ): SetupPreview {
-  const settingsPath = getSettingsPath();
-  const existing = readSettings(settingsPath);
+  const resolvedPath = settingsPath ?? getSettingsPath();
+  const existing = readSettings(resolvedPath);
   const env = (existing?.env ?? {}) as Record<string, string>;
 
   const newBaseUrl = `http://127.0.0.1:${port}/anthropic`;
@@ -271,7 +272,7 @@ export function previewClaudeCodeSettings(
     });
   }
 
-  return { configPath: settingsPath, diffs };
+  return { configPath: resolvedPath, diffs };
 }
 
 export function applySettingsJson(port: number, apiKey: string): SetupResult {

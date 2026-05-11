@@ -16,6 +16,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed / 修复
 
+## [0.0.5-beta.4] - 2026-05-11
+
+### Added / 新增
+
+- 新增按代理协议维度（OpenAI / Anthropic / Ollama）的用量统计，`stats` 子命令和会话退出摘要中展示 `By Protocol` 区块，历史列表新增 `Protocols` 列。
+- Added per-protocol (OpenAI / Anthropic / Ollama) usage statistics, with a `By Protocol` section in the `stats` subcommand and session exit summary, and a `Protocols` column in the history listing.
+- 统计数据文件新增 `protocols` 字段，按协议分别记录请求数、token 消耗、重试与错误数；旧格式文件自动兼容（`protocols` 缺失时视为空）。
+- Added `protocols` field to stats data files, recording request count, token usage, retries, and errors per protocol; old format files are automatically compatible (missing `protocols` defaults to empty).
+
+### Changed / 变更
+
+- Token 格式化中括号内的原始值使用千分位分隔符（如 `16,518,011`），提升大数字可读性。
+- Formatted raw values in parentheses of token display with thousands separators (e.g. `16,518,011`) for better readability of large numbers.
+- 启动日志为 `/v1/*` 转发路径增加 `(OpenAI protocol)` 标识，与 Ollama 和 Anthropic 日志格式统一。
+- Added `(OpenAI protocol)` label to the `/v1/*` forwarding startup log, consistent with Ollama and Anthropic log format.
+
+### Fixed / 修复
+
 ## [0.0.5-beta.3] - 2026-05-11
 
 ### Added / 新增
