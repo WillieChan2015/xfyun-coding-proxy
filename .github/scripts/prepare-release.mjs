@@ -101,8 +101,9 @@ async function readCurrentVersion(packageJsonPath) {
 }
 
 // README.md 和 docs/README.en.md 中的版本号需要与 package.json 保持一致。
-// 把旧版本号替换为新版本号，确保 release commit 包含 README 变更。
-export async function updateReadmeVersions(oldVersion, newVersion, options = {}) {
+// 匹配"当前版本"/"Current version"标签后反引号内的任意版本号并替换为新版本号，
+// 不依赖旧版本号精确匹配，避免 README 版本号滞后于 package.json 时替换失败。
+export async function updateReadmeVersions(_oldVersion, newVersion, options = {}) {
   const readmePath = options.readmePath ?? 'README.md';
   const readmeEnPath = options.readmeEnPath ?? 'docs/README.en.md';
   const updatedFiles = [];
@@ -116,14 +117,13 @@ export async function updateReadmeVersions(oldVersion, newVersion, options = {})
       continue;
     }
 
-    const escapedOld = escapeRegExp(oldVersion);
     const updated = content
       .replace(
-        new RegExp(`(当前版本[\\s：:]*\`)${escapedOld}(\`)`, 'g'),
+        /(当前版本[^`]*`)[^`]+(`)/g,
         `$1${newVersion}$2`,
       )
       .replace(
-        new RegExp(`(Current version[\\s：:]*\`)${escapedOld}(\`)`, 'g'),
+        /(Current version[^`]*`)[^`]+(`)/g,
         `$1${newVersion}$2`,
       );
 

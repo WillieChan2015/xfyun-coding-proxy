@@ -212,6 +212,7 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
 export async function startServer(server: FastifyInstance, cfg: ResolvedConfig): Promise<void> {
   try {
     await server.listen({ port: cfg.port, host: '127.0.0.1' });
+    server.log.info(`maas-coding-proxy v${version}`);
     server.log.info(`Forwarding /v1/* → ${cfg.baseUrl} (OpenAI protocol)`);
     server.log.info(`Forwarding /ollama/* → ${cfg.baseUrl} (Ollama protocol)`);
     server.log.info(`Forwarding /anthropic/* → ${cfg.anthropicBaseUrl} (Anthropic protocol)`);

@@ -12,7 +12,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added / 新增
 
+- 新增 `-v` / `--version` 命令行参数，输出当前版本号。
+- Added `-v` / `--version` CLI flag to print the current version.
+- 新增启动时输出版本信息（`maas-coding-proxy vX.Y.Z`）。
+- Added version info output on server startup (`maas-coding-proxy vX.Y.Z`).
+
 ### Changed / 变更
+
+- `--verbose` 选项移除 `-v` 短标志，改为仅支持 `--verbose`（`-v` 现用于 `--version`）。
+- Removed `-v` short flag from `--verbose` option; now only `--verbose` is accepted (`-v` is now used for `--version`).
 
 ### Fixed / 修复
 

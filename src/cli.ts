@@ -1,4 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { Command } from 'commander';
+
+// 从 package.json 读取版本号，避免硬编码
+const pkg = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8'));
 
 export interface CliOptions {
   port?: number;
@@ -25,7 +30,7 @@ export function parseCli(): CliOptions {
   program
     .name('maas-coding-proxy')
     .description('Local proxy for iFlytek Xingchen Coding Plan API (OpenAI-compatible)')
-    .version('0.0.1-alpha');
+    .version(pkg.version, '-v, --version');
 
   program
     .command('start', { isDefault: true })
@@ -44,7 +49,7 @@ export function parseCli(): CliOptions {
     .option('--retry-delay <ms>', 'initial retry delay in ms (default: $RETRY_DELAY_MS or 1000)')
     .option('--log-dir <dir>', 'log output directory (default: $XFYUN_LOG_DIR or XDG state dir)')
     .option('-c, --config <path>', 'path to config file')
-    .option('-v, --verbose', 'enable debug logging')
+    .option('--verbose', 'enable debug logging')
     .action((opts) => {
       result = {
         command: 'start',
