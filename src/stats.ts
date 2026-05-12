@@ -100,6 +100,34 @@ export function saveDailyStats(logDir: string, stats: DailyStats): void {
   }
 }
 
+/**
+ * 检查日期是否翻转，若跨天则将旧数据持久化并重置 dailyStats 为新一天
+ * 在每次请求入口和定时刷盘时调用
+ */
+export function rolloverDailyStats(logDir: string): void {
+  const today = todayStr();
+  if (dailyStats.date === today) return;
+
+  // 先持久化旧日期的数据
+  if (dailyStats.date) {
+    saveDailyStats(logDir, dailyStats);
+  }
+
+  // 重置为新一天
+  const existing = loadDailyStats(logDir, today);
+  if (existing) {
+    Object.assign(dailyStats, existing);
+  } else {
+    dailyStats.date = today;
+    dailyStats.requestCount = 0;
+    dailyStats.totalPromptTokens = 0;
+    dailyStats.totalCompletionTokens = 0;
+    dailyStats.retries = 0;
+    dailyStats.errors = 0;
+    dailyStats.protocols = {};
+  }
+}
+
 export function initDailyStats(logDir: string): void {
   const today = todayStr();
   const existing = loadDailyStats(logDir, today);
@@ -215,11 +243,16 @@ export function printStatsHistory(logDir: string): void {
 export function printSessionSummary(): void {
   const uptime = Date.now() - sessionStats.startTime;
   const totalTokens = sessionStats.totalPromptTokens + sessionStats.totalCompletionTokens;
+  const startDate = new Date(sessionStats.startTime);
+  const startDateStr = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`;
+  const today = todayStr();
+  const dateRange = startDateStr === today ? startDateStr : `${startDateStr} ~ ${today}`;
 
   console.log('');
   console.log('════════════════════════════════════════════════');
   console.log('  Session Summary');
   console.log('════════════════════════════════════════════════');
+  console.log(`  Date:           ${dateRange}`);
   console.log(`  Requests:       ${sessionStats.requestCount}`);
   console.log(`  Tokens:         ${fmtTokens(totalTokens)}`);
   console.log(`    Input:        ${fmtTokens(sessionStats.totalPromptTokens)}`);

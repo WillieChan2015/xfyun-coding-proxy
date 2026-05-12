@@ -7,7 +7,7 @@ import {
   isRetryableXfyunError,
   extractXfyunError,
 } from '../proxy';
-import { sessionStats, dailyStats, incrementProtocolStats } from '../stats';
+import { sessionStats, dailyStats, incrementProtocolStats, rolloverDailyStats } from '../stats';
 import { ANTHROPIC_SSE_EVENTS } from './types';
 import type { AnthropicUsage } from './types';
 
@@ -78,6 +78,7 @@ export async function handleAnthropicMessages(
   request: FastifyRequest,
   reply: FastifyReply,
 ): Promise<void> {
+  rolloverDailyStats(config.logDir);
   const startTime = Date.now();
   const body = request.body as Record<string, unknown> | undefined;
 
@@ -92,8 +93,9 @@ export async function handleAnthropicMessages(
     body.model = model;
   }
 
+  const ua = request.headers['user-agent'] ?? 'unknown';
   request.log.info(
-    `anthropic request | ${request.url} | stream=${isStream} | model=${model}`,
+    `anthropic request | ${request.url} | stream=${isStream} | model=${model} | ua=${ua}`,
   );
 
   // ---- 构建上游请求 ----
@@ -121,22 +123,46 @@ export async function handleAnthropicMessages(
   }
 
   // ---- 带重试地转发请求 ----
-  const {
-    response,
-    body: responseBodyText,
-    retries,
-  } = await fetchWithRetry(
-    upstreamUrl,
-    {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    },
-    config.maxRetries,
-    config.retryDelay,
-    !isStream,
-    request.log,
-  );
+  let response: Awaited<ReturnType<typeof fetchWithRetry>>['response'];
+  let responseBodyText: string | null;
+  let retries: number;
+
+  try {
+    const result = await fetchWithRetry(
+      upstreamUrl,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      },
+      config.maxRetries,
+      config.retryDelay,
+      !isStream,
+      request.log,
+    );
+    response = result.response;
+    responseBodyText = result.body;
+    retries = result.retries;
+  } catch (err) {
+    // fetchWithRetry 网络异常（超时、DNS 失败等）：返回 Anthropic 格式错误
+    const errMsg = err instanceof Error ? err.message : String(err);
+    request.log.error(`anthropic fetch error | ${Date.now() - startTime}ms | ${errMsg}`);
+
+    sessionStats.requestCount++;
+    sessionStats.errors++;
+    dailyStats.requestCount++;
+    dailyStats.errors++;
+    incrementProtocolStats(sessionStats, 'anthropic', { requestCount: 1, errors: 1 });
+
+    reply.status(502).send({
+      type: 'error',
+      error: {
+        type: 'api_error',
+        message: `upstream request failed: ${errMsg}`,
+      },
+    });
+    return;
+  }
 
   const durationMs = Date.now() - startTime;
 

@@ -1,10 +1,10 @@
 import { FastifyRequest, FastifyReply, FastifyInstance } from 'fastify';
 import { config, DEFAULT_MODEL } from './config';
 import { extractTokenUsage, fmtTokens } from './util';
-import { sessionStats, dailyStats, incrementProtocolStats } from './stats';
+import { sessionStats, dailyStats, incrementProtocolStats, rolloverDailyStats } from './stats';
 
-// HTTP 状态码级别的重试条件：429 限流、503 服务过载
-export const RETRYABLE_STATUS_CODES = new Set([429, 503]);
+// HTTP 状态码级别的重试条件：429 限流、500 上游内部错误（含超时）、503 服务过载
+export const RETRYABLE_STATUS_CODES = new Set([429, 500, 503]);
 
 // 讯飞业务层错误码：
 //   10012 引擎内部繁忙
@@ -412,6 +412,7 @@ export async function fetchWithRetry(
  *    - 流式：先缓存所有 SSE chunks 检测讯飞错误码，正常则透传，异常则降级重试
  */
 export async function handleProxy(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  rolloverDailyStats(config.logDir);
   const startTime = Date.now();
   const body = request.body as Record<string, unknown> | undefined;
 
@@ -425,8 +426,9 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     body.model = model;
   }
 
+  const ua = request.headers['user-agent'] ?? 'unknown';
   request.log.info(
-    `request incoming | ${request.url} | stream=${isStream} | ${summarizeContentTypes(body)}`,
+    `request incoming | ${request.url} | stream=${isStream} | ${summarizeContentTypes(body)} | ua=${ua}`,
   );
 
   // ---- 步骤 2：构建上游请求 ----
@@ -453,22 +455,47 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
 
   // ---- 步骤 3：带重试地转发请求 ----
   // 非流式请求读取 body 以检测讯飞错误码，流式请求保留 ReadableStream
-  const {
-    response,
-    body: responseBodyText,
-    retries,
-  } = await fetchWithRetry(
-    upstreamUrl,
-    {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    },
-    config.maxRetries,
-    config.retryDelay,
-    !isStream,
-    request.log,
-  );
+  let response: Awaited<ReturnType<typeof fetchWithRetry>>['response'];
+  let responseBodyText: string | null;
+  let retries: number;
+
+  try {
+    const result = await fetchWithRetry(
+      upstreamUrl,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      },
+      config.maxRetries,
+      config.retryDelay,
+      !isStream,
+      request.log,
+    );
+    response = result.response;
+    responseBodyText = result.body;
+    retries = result.retries;
+  } catch (err) {
+    // fetchWithRetry 网络异常（超时、DNS 失败等）：返回 OpenAI 格式错误
+    const errMsg = err instanceof Error ? err.message : String(err);
+    request.log.error(`upstream fetch error | ${Date.now() - startTime}ms | ${errMsg}`);
+
+    sessionStats.requestCount++;
+    sessionStats.errors++;
+    dailyStats.requestCount++;
+    dailyStats.errors++;
+    incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, errors: 1 });
+    incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, errors: 1 });
+
+    reply.status(502).send({
+      error: {
+        message: `upstream request failed: ${errMsg}`,
+        type: 'upstream_error',
+        code: 502,
+      },
+    });
+    return;
+  }
 
   const durationMs = Date.now() - startTime;
 

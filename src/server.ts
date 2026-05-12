@@ -5,7 +5,7 @@ import { ResolvedConfig, config, DEFAULT_MODEL } from './config';
 import { handleProxy, handleGetProxy } from './proxy';
 import { handleOllamaChat, handleOllamaGenerate } from './ollama/handler';
 import { handleAnthropicMessages } from './anthropic/handler';
-import { printSessionSummary, initDailyStats, saveDailyStats, dailyStats } from './stats';
+import { printSessionSummary, initDailyStats, saveDailyStats, rolloverDailyStats, dailyStats } from './stats';
 import { checkForUpdate } from './update-check.js';
 
 // 读取当前包版本，用于启动时更新检查
@@ -23,6 +23,7 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
   // 启动定时刷盘
   if (cfg.statsFlushInterval > 0) {
     flushTimer = setInterval(() => {
+      rolloverDailyStats(cfg.logDir);
       saveDailyStats(cfg.logDir, dailyStats);
     }, cfg.statsFlushInterval);
     // 不阻止进程退出
@@ -33,8 +34,9 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
 
   const server = Fastify({
     // 超时与 body 限制：防止连接挂死/超大请求拖垮本地代理
+    // requestTimeout 需大于 fetch 上游超时(120s)，否则 Fastify 会先于 fetch 中断请求
     connectionTimeout: 30_000,
-    requestTimeout: 60_000,
+    requestTimeout: 180_000,
     bodyLimit: 1_048_576, // 1MB
     logger: {
       level: cfg.verbose ? 'debug' : 'info',

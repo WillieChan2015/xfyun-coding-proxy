@@ -10,7 +10,7 @@ import {
   extractStreamUsage,
 } from '../proxy';
 import { extractTokenUsage, fmtTokens } from '../util';
-import { sessionStats, dailyStats, incrementProtocolStats } from '../stats';
+import { sessionStats, dailyStats, incrementProtocolStats, rolloverDailyStats } from '../stats';
 import { convertChatRequest, convertGenerateRequest } from './request';
 import {
   convertChatResponse,
@@ -116,6 +116,7 @@ async function handleOllamaProxy(
   reply: FastifyReply,
   endpoint: OllamaEndpoint,
 ): Promise<void> {
+  rolloverDailyStats(config.logDir);
   const startTime = Date.now();
   const rawBody = request.body as Record<string, unknown>;
 
@@ -129,8 +130,9 @@ async function handleOllamaProxy(
 
   const isStream = openaiBody.stream === true;
 
+  const ua = request.headers['user-agent'] ?? 'unknown';
   request.log.info(
-    `ollama ${endpoint} | stream=${isStream} | model=${rawBody.model ?? 'unknown'}`,
+    `ollama ${endpoint} | stream=${isStream} | model=${rawBody.model ?? 'unknown'} | ua=${ua}`,
   );
 
   // ---- 步骤 2：构建上游请求 ----
@@ -142,18 +144,40 @@ async function handleOllamaProxy(
   };
 
   // ---- 步骤 3：带重试地转发请求 ----
-  const { response, body: responseBodyText, retries } = await fetchWithRetry(
-    upstreamUrl,
-    {
-      method: 'POST',
-      headers: upstreamHeaders,
-      body: JSON.stringify(openaiBody),
-    },
-    config.maxRetries,
-    config.retryDelay,
-    !isStream,
-    request.log,
-  );
+  let response: Awaited<ReturnType<typeof fetchWithRetry>>['response'];
+  let responseBodyText: string | null;
+  let retries: number;
+
+  try {
+    const result = await fetchWithRetry(
+      upstreamUrl,
+      {
+        method: 'POST',
+        headers: upstreamHeaders,
+        body: JSON.stringify(openaiBody),
+      },
+      config.maxRetries,
+      config.retryDelay,
+      !isStream,
+      request.log,
+    );
+    response = result.response;
+    responseBodyText = result.body;
+    retries = result.retries;
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    request.log.error(`ollama upstream fetch error | ${Date.now() - startTime}ms | ${errMsg}`);
+
+    sessionStats.requestCount++;
+    sessionStats.errors++;
+    dailyStats.requestCount++;
+    dailyStats.errors++;
+    incrementProtocolStats(sessionStats, 'ollama', { requestCount: 1, errors: 1 });
+    incrementProtocolStats(dailyStats, 'ollama', { requestCount: 1, errors: 1 });
+
+    reply.status(502).send({ error: `upstream request failed: ${errMsg}` });
+    return;
+  }
 
   const durationMs = Date.now() - startTime;
 
