@@ -8,6 +8,7 @@ export interface CliOptions {
   maxRetries?: number;
   retryDelay?: number;
   verbose: boolean;
+  monitor?: boolean;
   logDir?: string;
   config?: string;
   command?: 'start' | 'stats' | 'setup' | 'setup-restore';
@@ -45,6 +46,7 @@ export function parseCli(): CliOptions {
     .option('--log-dir <dir>', 'log output directory (default: $XFYUN_LOG_DIR or XDG state dir)')
     .option('-c, --config <path>', 'path to config file')
     .option('-v, --verbose', 'enable debug logging')
+    .option('--no-monitor', '禁用实时监控面板，使用普通日志输出')
     .action((opts) => {
       result = {
         command: 'start',
@@ -55,6 +57,7 @@ export function parseCli(): CliOptions {
         maxRetries: opts.maxRetries ? parseInt(opts.maxRetries, 10) : undefined,
         retryDelay: opts.retryDelay ? parseInt(opts.retryDelay, 10) : undefined,
         verbose: opts.verbose ?? false,
+        monitor: opts.monitor === false ? false : undefined,
         logDir: opts.logDir || undefined,
         config: opts.config || undefined,
       };
