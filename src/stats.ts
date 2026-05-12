@@ -223,6 +223,30 @@ export function recordRequestComplete(event: RequestCompleteEvent): void {
 
   // 发射事件
   statsEmitter.emit('request:complete', event);
+
+  // 延迟窗口：推入延迟值，超出窗口大小时移除最早的数据
+  latencyWindow.push(event.latencyMs);
+  if (latencyWindow.length > LATENCY_WINDOW_SIZE) {
+    latencyWindow.shift();
+  }
+
+  // 请求日志缓冲区：构建日志条目并推入环形缓冲区
+  const logEntry: RequestLogEntry = {
+    timestamp: Date.now(),
+    method: 'POST',
+    path: `/${event.protocol}`,
+    protocol: event.protocol,
+    model: event.model,
+    latencyMs: event.latencyMs,
+    inputTokens: event.inputTokens,
+    outputTokens: event.outputTokens,
+    success: event.success,
+    ...(event.error ? { error: event.error } : {}),
+  };
+  requestLog.push(logEntry);
+  if (requestLog.length > LOG_BUFFER_SIZE) {
+    requestLog.shift();
+  }
 }
 
 /**
@@ -230,6 +254,80 @@ export function recordRequestComplete(event: RequestCompleteEvent): void {
  */
 export function recordRequestStart(protocol: Protocol, model: string): void {
   statsEmitter.emit('request:start', { protocol, model });
+}
+
+// ---- 并发追踪 ----
+
+let activeRequests = 0;
+let streamingRequests = 0;
+
+export function requestStarted(): void {
+  activeRequests++;
+}
+
+export function requestFinished(): void {
+  activeRequests = Math.max(0, activeRequests - 1);
+}
+
+export function streamingStarted(): void {
+  streamingRequests++;
+}
+
+export function streamingFinished(): void {
+  streamingRequests = Math.max(0, streamingRequests - 1);
+}
+
+export function getActiveRequests(): number {
+  return activeRequests;
+}
+
+export function getStreamingRequests(): number {
+  return streamingRequests;
+}
+
+// ---- 延迟追踪（滑动窗口） ----
+
+const LATENCY_WINDOW_SIZE = 1000;
+const latencyWindow: number[] = [];
+
+export function getLatencyStats(): { avg: number; p95: number } {
+  if (latencyWindow.length === 0) return { avg: 0, p95: 0 };
+  const sorted = [...latencyWindow].sort((a, b) => a - b);
+  const avg = sorted.reduce((s, v) => s + v, 0) / sorted.length;
+  const p95Idx = Math.ceil(sorted.length * 0.95) - 1;
+  return { avg: Math.round(avg), p95: sorted[p95Idx] };
+}
+
+// ---- 请求日志缓冲区（环形） ----
+
+export interface RequestLogEntry {
+  timestamp: number;
+  method: string;
+  path: string;
+  protocol: Protocol;
+  model: string;
+  latencyMs: number;
+  inputTokens: number;
+  outputTokens: number;
+  success: boolean;
+  error?: string;
+}
+
+const LOG_BUFFER_SIZE = 100;
+const requestLog: RequestLogEntry[] = [];
+
+export function getRequestLog(): ReadonlyArray<RequestLogEntry> {
+  return requestLog;
+}
+
+export function resetDailyStats(): void {
+  dailyStats.date = todayStr();
+  dailyStats.requestCount = 0;
+  dailyStats.totalPromptTokens = 0;
+  dailyStats.totalCompletionTokens = 0;
+  dailyStats.retries = 0;
+  dailyStats.errors = 0;
+  dailyStats.protocols = {};
 }
 
 export function listStatsDates(logDir: string): string[] {

@@ -7,7 +7,7 @@ import {
   isRetryableXfyunError,
   extractXfyunError,
 } from '../proxy';
-import { rolloverDailyStats, recordRequestComplete, recordRequestStart } from '../stats';
+import { rolloverDailyStats, recordRequestComplete, recordRequestStart, requestStarted, requestFinished, streamingStarted, streamingFinished } from '../stats';
 import { ANTHROPIC_SSE_EVENTS } from './types';
 import type { AnthropicUsage } from './types';
 
@@ -78,6 +78,7 @@ export async function handleAnthropicMessages(
   request: FastifyRequest,
   reply: FastifyReply,
 ): Promise<void> {
+  requestStarted();
   rolloverDailyStats(config.logDir);
   const startTime = Date.now();
   const body = request.body as Record<string, unknown> | undefined;
@@ -168,6 +169,7 @@ export async function handleAnthropicMessages(
         message: `upstream request failed: ${errMsg}`,
       },
     });
+    requestFinished();
     return;
   }
 
@@ -196,6 +198,7 @@ export async function handleAnthropicMessages(
 
     reply.status(response.status);
     reply.send(responseBodyText);
+    requestFinished();
     return;
   }
 
@@ -223,6 +226,7 @@ export async function handleAnthropicMessages(
         message: `upstream returned ${response.status} with empty body`,
       },
     });
+    requestFinished();
     return;
   }
 
@@ -250,11 +254,13 @@ export async function handleAnthropicMessages(
         message: `upstream returned ${response.status} with no stream body`,
       },
     });
+    requestFinished();
     return;
   }
 
   // 流式请求：Anthropic SSE 事件过滤 + 讯飞字段清理 → 实时透传
   if (isStream && response.body) {
+    streamingStarted();
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
@@ -322,6 +328,8 @@ export async function handleAnthropicMessages(
     } finally {
       reader.releaseLock();
       reply.raw.end();
+      streamingFinished();
+      requestFinished();
     }
 
     if (streamError) {
@@ -380,6 +388,7 @@ export async function handleAnthropicMessages(
         message: 'upstream returned empty response body',
       },
     });
+    requestFinished();
     return;
   }
 
@@ -412,4 +421,5 @@ export async function handleAnthropicMessages(
 
   reply.status(response.status);
   reply.send(finalBody);
+  requestFinished();
 }

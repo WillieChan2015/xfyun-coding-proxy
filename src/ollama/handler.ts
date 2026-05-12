@@ -10,7 +10,7 @@ import {
   extractStreamUsage,
 } from '../proxy';
 import { extractTokenUsage, fmtTokens } from '../util';
-import { rolloverDailyStats, recordRequestComplete, recordRequestStart } from '../stats';
+import { rolloverDailyStats, recordRequestComplete, recordRequestStart, requestStarted, requestFinished, streamingStarted, streamingFinished } from '../stats';
 import { convertChatRequest, convertGenerateRequest } from './request';
 import {
   convertChatResponse,
@@ -51,6 +51,7 @@ export async function handleOllamaTags(
   request: FastifyRequest,
   reply: FastifyReply,
 ): Promise<void> {
+  requestStarted();
   const upstreamUrl = buildUpstreamUrl('/v1/models');
 
   const headers: Record<string, string> = {
@@ -79,6 +80,7 @@ export async function handleOllamaTags(
         error: `upstream ${response.status}`,
       });
       reply.status(response.status).send({ error: body });
+      requestFinished();
       return;
     }
 
@@ -96,6 +98,7 @@ export async function handleOllamaTags(
     });
 
     reply.status(200).send(ollamaTags);
+    requestFinished();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     request.log.error(`ollama tags error | ${msg}`);
@@ -110,6 +113,7 @@ export async function handleOllamaTags(
       error: msg,
     });
     reply.status(500).send({ error: msg });
+    requestFinished();
   }
 }
 
@@ -129,6 +133,7 @@ async function handleOllamaProxy(
   reply: FastifyReply,
   endpoint: OllamaEndpoint,
 ): Promise<void> {
+  requestStarted();
   rolloverDailyStats(config.logDir);
   const startTime = Date.now();
   const rawBody = request.body as Record<string, unknown>;
@@ -195,6 +200,7 @@ async function handleOllamaProxy(
     });
 
     reply.status(502).send({ error: `upstream request failed: ${errMsg}` });
+    requestFinished();
     return;
   }
 
@@ -222,6 +228,7 @@ async function handleOllamaProxy(
     } catch {
       reply.status(response.status).send({ error: responseBodyText.slice(0, 200) });
     }
+    requestFinished();
     return;
   }
 
@@ -280,11 +287,13 @@ async function handleOllamaProxy(
       });
       reply.status(500).send({ error: `response parse error: ${msg}` });
     }
+    requestFinished();
     return;
   }
 
   // 4c. 流式请求：SSE 过滤 + 讯飞字段清理 → NDJSON 实时转换
   if (isStream && response.body) {
+    streamingStarted();
     reply.raw.writeHead(200, {
       'Content-Type': 'application/x-ndjson',
       'Cache-Control': 'no-cache, no-transform',
@@ -341,6 +350,8 @@ async function handleOllamaProxy(
     } finally {
       reader.releaseLock();
       reply.raw.end();
+      streamingFinished();
+      requestFinished();
     }
 
     if (streamError) {
@@ -374,4 +385,5 @@ async function handleOllamaProxy(
   }
 
   reply.status(500).send({ error: 'unexpected response state' });
+  requestFinished();
 }

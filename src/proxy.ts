@@ -1,7 +1,7 @@
 import { FastifyRequest, FastifyReply, FastifyInstance } from 'fastify';
 import { config, DEFAULT_MODEL } from './config';
 import { extractTokenUsage, fmtTokens } from './util';
-import { rolloverDailyStats, recordRequestComplete, recordRequestStart } from './stats';
+import { rolloverDailyStats, recordRequestComplete, recordRequestStart, requestStarted, requestFinished, streamingStarted, streamingFinished } from './stats';
 
 // HTTP 状态码级别的重试条件：429 限流、500 上游内部错误（含超时）、503 服务过载
 export const RETRYABLE_STATUS_CODES = new Set([429, 500, 503]);
@@ -412,6 +412,7 @@ export async function fetchWithRetry(
  *    - 流式：先缓存所有 SSE chunks 检测讯飞错误码，正常则透传，异常则降级重试
  */
 export async function handleProxy(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  requestStarted();
   rolloverDailyStats(config.logDir);
   const startTime = Date.now();
   const body = request.body as Record<string, unknown> | undefined;
@@ -500,6 +501,7 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
         code: 502,
       },
     });
+    requestFinished();
     return;
   }
 
@@ -528,6 +530,7 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
 
     reply.status(response.status);
     reply.send(responseBodyText);
+    requestFinished();
     return;
   }
 
@@ -556,6 +559,7 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
         code: response.status,
       },
     });
+    requestFinished();
     return;
   }
 
@@ -584,11 +588,13 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
         code: response.status,
       },
     });
+    requestFinished();
     return;
   }
 
   // 4c. 流式请求：解析 SSE 事件，过滤非标准事件，实时透传
   if (isStream && response.body) {
+    streamingStarted();
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
@@ -660,6 +666,8 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     } finally {
       reader.releaseLock();
       reply.raw.end();
+      streamingFinished();
+      requestFinished();
     }
 
     if (streamError) {
@@ -718,6 +726,7 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
         code: 500,
       },
     });
+    requestFinished();
     return;
   }
 
@@ -759,6 +768,7 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
 
   reply.status(response.status);
   reply.send(responseBody);
+  requestFinished();
 }
 
 /**
@@ -769,6 +779,7 @@ export async function handleGetProxy(
   request: FastifyRequest,
   reply: FastifyReply,
 ): Promise<void> {
+  requestStarted();
   const upstreamUrl = buildUpstreamUrl(request.url);
 
   const headers: Record<string, string> = {
@@ -798,4 +809,5 @@ export async function handleGetProxy(
   reply.status(response.status);
   reply.header('Content-Type', response.headers.get('content-type') || 'application/json');
   reply.send(body);
+  requestFinished();
 }
