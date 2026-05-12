@@ -10,7 +10,7 @@ import {
   extractStreamUsage,
 } from '../proxy';
 import { extractTokenUsage, fmtTokens } from '../util';
-import { sessionStats, dailyStats, incrementProtocolStats, rolloverDailyStats } from '../stats';
+import { rolloverDailyStats, recordRequestComplete, recordRequestStart } from '../stats';
 import { convertChatRequest, convertGenerateRequest } from './request';
 import {
   convertChatResponse,
@@ -68,12 +68,16 @@ export async function handleOllamaTags(
     request.log.info(`ollama tags | ${response.status}`);
 
     if (!response.ok) {
-      sessionStats.requestCount++;
-      sessionStats.errors++;
-      dailyStats.requestCount++;
-      dailyStats.errors++;
-      incrementProtocolStats(sessionStats, 'ollama', { requestCount: 1, errors: 1 });
-      incrementProtocolStats(dailyStats, 'ollama', { requestCount: 1, errors: 1 });
+      recordRequestComplete({
+        protocol: 'ollama',
+        model: 'unknown',
+        inputTokens: 0,
+        outputTokens: 0,
+        latencyMs: 0,
+        success: false,
+        retries: 0,
+        error: `upstream ${response.status}`,
+      });
       reply.status(response.status).send({ error: body });
       return;
     }
@@ -81,21 +85,30 @@ export async function handleOllamaTags(
     const openai = JSON.parse(body) as Record<string, unknown>;
     const ollamaTags = convertTagsResponse(openai);
 
-    sessionStats.requestCount++;
-    dailyStats.requestCount++;
-    incrementProtocolStats(sessionStats, 'ollama', { requestCount: 1 });
-    incrementProtocolStats(dailyStats, 'ollama', { requestCount: 1 });
+    recordRequestComplete({
+      protocol: 'ollama',
+      model: 'unknown',
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: 0,
+      success: true,
+      retries: 0,
+    });
 
     reply.status(200).send(ollamaTags);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     request.log.error(`ollama tags error | ${msg}`);
-    sessionStats.requestCount++;
-    sessionStats.errors++;
-    dailyStats.requestCount++;
-    dailyStats.errors++;
-    incrementProtocolStats(sessionStats, 'ollama', { requestCount: 1, errors: 1 });
-    incrementProtocolStats(dailyStats, 'ollama', { requestCount: 1, errors: 1 });
+    recordRequestComplete({
+      protocol: 'ollama',
+      model: 'unknown',
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: 0,
+      success: false,
+      retries: 0,
+      error: msg,
+    });
     reply.status(500).send({ error: msg });
   }
 }
@@ -135,6 +148,8 @@ async function handleOllamaProxy(
     `ollama ${endpoint} | stream=${isStream} | model=${rawBody.model ?? 'unknown'} | ua=${ua}`,
   );
 
+  recordRequestStart('ollama', String(rawBody.model ?? 'unknown'));
+
   // ---- 步骤 2：构建上游请求 ----
   const upstreamUrl = buildUpstreamUrl('/v1/chat/completions');
 
@@ -168,12 +183,16 @@ async function handleOllamaProxy(
     const errMsg = err instanceof Error ? err.message : String(err);
     request.log.error(`ollama upstream fetch error | ${Date.now() - startTime}ms | ${errMsg}`);
 
-    sessionStats.requestCount++;
-    sessionStats.errors++;
-    dailyStats.requestCount++;
-    dailyStats.errors++;
-    incrementProtocolStats(sessionStats, 'ollama', { requestCount: 1, errors: 1 });
-    incrementProtocolStats(dailyStats, 'ollama', { requestCount: 1, errors: 1 });
+    recordRequestComplete({
+      protocol: 'ollama',
+      model: String(rawBody.model ?? 'unknown'),
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: Date.now() - startTime,
+      success: false,
+      retries: 0,
+      error: errMsg,
+    });
 
     reply.status(502).send({ error: `upstream request failed: ${errMsg}` });
     return;
@@ -186,14 +205,16 @@ async function handleOllamaProxy(
   // 4a. 非流式请求的上游错误：转换为 Ollama 错误格式返回
   if (!response.ok && !isStream && responseBodyText) {
     request.log.error(`ollama upstream error | ${response.status} | ${durationMs}ms`);
-    sessionStats.requestCount++;
-    sessionStats.retries += retries;
-    sessionStats.errors++;
-    dailyStats.requestCount++;
-    dailyStats.retries += retries;
-    dailyStats.errors++;
-    incrementProtocolStats(sessionStats, 'ollama', { requestCount: 1, retries, errors: 1 });
-    incrementProtocolStats(dailyStats, 'ollama', { requestCount: 1, retries, errors: 1 });
+    recordRequestComplete({
+      protocol: 'ollama',
+      model: String(rawBody.model ?? 'unknown'),
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: durationMs,
+      success: false,
+      retries,
+      error: `upstream ${response.status}`,
+    });
 
     try {
       const errJson = JSON.parse(responseBodyText) as Record<string, unknown>;
@@ -233,24 +254,13 @@ async function handleOllamaProxy(
           : '';
 
       request.log.info(`ollama ${endpoint} completed | ${durationMs}ms | ${tokenInfo}`);
-      sessionStats.requestCount++;
-      sessionStats.totalPromptTokens += usageInfo.promptTokens ?? 0;
-      sessionStats.totalCompletionTokens += usageInfo.completionTokens ?? 0;
-      sessionStats.retries += retries;
-      dailyStats.requestCount++;
-      dailyStats.totalPromptTokens += usageInfo.promptTokens ?? 0;
-      dailyStats.totalCompletionTokens += usageInfo.completionTokens ?? 0;
-      dailyStats.retries += retries;
-      incrementProtocolStats(sessionStats, 'ollama', {
-        requestCount: 1,
-        totalPromptTokens: usageInfo.promptTokens ?? 0,
-        totalCompletionTokens: usageInfo.completionTokens ?? 0,
-        retries,
-      });
-      incrementProtocolStats(dailyStats, 'ollama', {
-        requestCount: 1,
-        totalPromptTokens: usageInfo.promptTokens ?? 0,
-        totalCompletionTokens: usageInfo.completionTokens ?? 0,
+      recordRequestComplete({
+        protocol: 'ollama',
+        model: String(rawBody.model ?? 'unknown'),
+        inputTokens: usageInfo.promptTokens ?? 0,
+        outputTokens: usageInfo.completionTokens ?? 0,
+        latencyMs: durationMs,
+        success: true,
         retries,
       });
 
@@ -258,12 +268,16 @@ async function handleOllamaProxy(
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       request.log.error(`ollama response parse error | ${msg}`);
-      sessionStats.requestCount++;
-      sessionStats.errors++;
-      dailyStats.requestCount++;
-      dailyStats.errors++;
-      incrementProtocolStats(sessionStats, 'ollama', { requestCount: 1, errors: 1 });
-      incrementProtocolStats(dailyStats, 'ollama', { requestCount: 1, errors: 1 });
+      recordRequestComplete({
+        protocol: 'ollama',
+        model: String(rawBody.model ?? 'unknown'),
+        inputTokens: 0,
+        outputTokens: 0,
+        latencyMs: durationMs,
+        success: false,
+        retries: 0,
+        error: msg,
+      });
       reply.status(500).send({ error: `response parse error: ${msg}` });
     }
     return;
@@ -330,24 +344,32 @@ async function handleOllamaProxy(
     }
 
     if (streamError) {
-      sessionStats.requestCount++;
-      sessionStats.errors++;
-      dailyStats.requestCount++;
-      dailyStats.errors++;
-      incrementProtocolStats(sessionStats, 'ollama', { requestCount: 1, errors: 1 });
-      incrementProtocolStats(dailyStats, 'ollama', { requestCount: 1, errors: 1 });
+      recordRequestComplete({
+        protocol: 'ollama',
+        model: String(rawBody.model ?? 'unknown'),
+        inputTokens: 0,
+        outputTokens: 0,
+        latencyMs: durationMs,
+        success: false,
+        retries,
+        error: streamError,
+      });
     } else {
       const tokenInfo =
         promptTokens !== undefined
           ? `in=${fmtTokens(promptTokens)} out=${fmtTokens(completionTokens!)}`
           : '';
       request.log.info(`ollama ${endpoint} stream completed | ${durationMs}ms | ${tokenInfo}`);
+      recordRequestComplete({
+        protocol: 'ollama',
+        model: String(rawBody.model ?? 'unknown'),
+        inputTokens: promptTokens ?? 0,
+        outputTokens: completionTokens ?? 0,
+        latencyMs: durationMs,
+        success: true,
+        retries,
+      });
     }
-
-    sessionStats.retries += retries;
-    dailyStats.retries += retries;
-    incrementProtocolStats(sessionStats, 'ollama', { retries });
-    incrementProtocolStats(dailyStats, 'ollama', { retries });
     return;
   }
 

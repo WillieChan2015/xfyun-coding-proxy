@@ -7,7 +7,7 @@ import {
   isRetryableXfyunError,
   extractXfyunError,
 } from '../proxy';
-import { sessionStats, dailyStats, incrementProtocolStats, rolloverDailyStats } from '../stats';
+import { rolloverDailyStats, recordRequestComplete, recordRequestStart } from '../stats';
 import { ANTHROPIC_SSE_EVENTS } from './types';
 import type { AnthropicUsage } from './types';
 
@@ -98,6 +98,8 @@ export async function handleAnthropicMessages(
     `anthropic request | ${request.url} | stream=${isStream} | model=${model} | ua=${ua}`,
   );
 
+  recordRequestStart('anthropic', model);
+
   // ---- 构建上游请求 ----
   const upstreamUrl = `${config.anthropicBaseUrl.replace(/\/$/, '')}/v1/messages`;
 
@@ -148,11 +150,16 @@ export async function handleAnthropicMessages(
     const errMsg = err instanceof Error ? err.message : String(err);
     request.log.error(`anthropic fetch error | ${Date.now() - startTime}ms | ${errMsg}`);
 
-    sessionStats.requestCount++;
-    sessionStats.errors++;
-    dailyStats.requestCount++;
-    dailyStats.errors++;
-    incrementProtocolStats(sessionStats, 'anthropic', { requestCount: 1, errors: 1 });
+    recordRequestComplete({
+      protocol: 'anthropic',
+      model,
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: Date.now() - startTime,
+      success: false,
+      retries: 0,
+      error: errMsg,
+    });
 
     reply.status(502).send({
       type: 'error',
@@ -176,14 +183,16 @@ export async function handleAnthropicMessages(
       `anthropic upstream error | ${response.status} | ${durationMs}ms | retries=${retries}${errDetail}`,
     );
 
-    sessionStats.requestCount++;
-    sessionStats.retries += retries;
-    sessionStats.errors++;
-    dailyStats.requestCount++;
-    dailyStats.retries += retries;
-    dailyStats.errors++;
-    incrementProtocolStats(sessionStats, 'anthropic', { requestCount: 1, retries, errors: 1 });
-    incrementProtocolStats(dailyStats, 'anthropic', { requestCount: 1, retries, errors: 1 });
+    recordRequestComplete({
+      protocol: 'anthropic',
+      model,
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: durationMs,
+      success: false,
+      retries,
+      error: `upstream ${response.status}`,
+    });
 
     reply.status(response.status);
     reply.send(responseBodyText);
@@ -196,14 +205,16 @@ export async function handleAnthropicMessages(
       `anthropic upstream error with empty body | ${response.status} | ${durationMs}ms | retries=${retries}`,
     );
 
-    sessionStats.requestCount++;
-    sessionStats.retries += retries;
-    sessionStats.errors++;
-    dailyStats.requestCount++;
-    dailyStats.retries += retries;
-    dailyStats.errors++;
-    incrementProtocolStats(sessionStats, 'anthropic', { requestCount: 1, retries, errors: 1 });
-    incrementProtocolStats(dailyStats, 'anthropic', { requestCount: 1, retries, errors: 1 });
+    recordRequestComplete({
+      protocol: 'anthropic',
+      model,
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: durationMs,
+      success: false,
+      retries,
+      error: `upstream ${response.status} empty body`,
+    });
 
     reply.status(response.status).send({
       type: 'error',
@@ -221,14 +232,16 @@ export async function handleAnthropicMessages(
       `anthropic stream upstream error with no body | ${response.status} | ${durationMs}ms | retries=${retries}`,
     );
 
-    sessionStats.requestCount++;
-    sessionStats.retries += retries;
-    sessionStats.errors++;
-    dailyStats.requestCount++;
-    dailyStats.retries += retries;
-    dailyStats.errors++;
-    incrementProtocolStats(sessionStats, 'anthropic', { requestCount: 1, retries, errors: 1 });
-    incrementProtocolStats(dailyStats, 'anthropic', { requestCount: 1, retries, errors: 1 });
+    recordRequestComplete({
+      protocol: 'anthropic',
+      model,
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: durationMs,
+      success: false,
+      retries,
+      error: `upstream ${response.status} no stream body`,
+    });
 
     reply.status(response.status).send({
       type: 'error',
@@ -313,14 +326,16 @@ export async function handleAnthropicMessages(
 
     if (streamError) {
       request.log.error(`anthropic stream aborted | ${durationMs}ms | ${streamError}`);
-      sessionStats.requestCount++;
-      sessionStats.errors++;
-      dailyStats.requestCount++;
-      dailyStats.errors++;
-      sessionStats.retries += retries;
-      dailyStats.retries += retries;
-      incrementProtocolStats(sessionStats, 'anthropic', { requestCount: 1, errors: 1, retries });
-      incrementProtocolStats(dailyStats, 'anthropic', { requestCount: 1, errors: 1, retries });
+      recordRequestComplete({
+        protocol: 'anthropic',
+        model,
+        inputTokens: 0,
+        outputTokens: 0,
+        latencyMs: durationMs,
+        success: false,
+        retries,
+        error: streamError,
+      });
       return;
     }
 
@@ -331,16 +346,15 @@ export async function handleAnthropicMessages(
     request.log.info(
       `anthropic stream completed | ${durationMs}ms | ${tokenInfo}`.replace(/ \| $/, ''),
     );
-    sessionStats.requestCount++;
-    sessionStats.totalPromptTokens += inputTokens ?? 0;
-    sessionStats.totalCompletionTokens += outputTokens ?? 0;
-    sessionStats.retries += retries;
-    dailyStats.requestCount++;
-    dailyStats.totalPromptTokens += inputTokens ?? 0;
-    dailyStats.totalCompletionTokens += outputTokens ?? 0;
-    dailyStats.retries += retries;
-    incrementProtocolStats(sessionStats, 'anthropic', { requestCount: 1, totalPromptTokens: inputTokens ?? 0, totalCompletionTokens: outputTokens ?? 0, retries });
-    incrementProtocolStats(dailyStats, 'anthropic', { requestCount: 1, totalPromptTokens: inputTokens ?? 0, totalCompletionTokens: outputTokens ?? 0, retries });
+    recordRequestComplete({
+      protocol: 'anthropic',
+      model,
+      inputTokens: inputTokens ?? 0,
+      outputTokens: outputTokens ?? 0,
+      latencyMs: durationMs,
+      success: true,
+      retries,
+    });
     return;
   }
 
@@ -349,6 +363,16 @@ export async function handleAnthropicMessages(
     request.log.error(
       `anthropic non-stream response with null body | ${response.status} | ${durationMs}ms | retries=${retries}`,
     );
+    recordRequestComplete({
+      protocol: 'anthropic',
+      model,
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: durationMs,
+      success: false,
+      retries,
+      error: 'upstream returned empty response body',
+    });
     reply.status(500).send({
       type: 'error',
       error: {
@@ -356,12 +380,6 @@ export async function handleAnthropicMessages(
         message: 'upstream returned empty response body',
       },
     });
-    sessionStats.requestCount++;
-    sessionStats.errors++;
-    dailyStats.requestCount++;
-    dailyStats.errors++;
-    incrementProtocolStats(sessionStats, 'anthropic', { requestCount: 1, errors: 1 });
-    incrementProtocolStats(dailyStats, 'anthropic', { requestCount: 1, errors: 1 });
     return;
   }
 
@@ -381,29 +399,15 @@ export async function handleAnthropicMessages(
     `anthropic request completed | ${durationMs}ms | ${tokenInfo}`.replace(/ \| $/, ''),
   );
 
-  sessionStats.requestCount++;
-  sessionStats.totalPromptTokens += usageInfo.inputTokens ?? 0;
-  sessionStats.totalCompletionTokens += usageInfo.outputTokens ?? 0;
-  sessionStats.retries += retries;
-  if (!response.ok) sessionStats.errors++;
-  dailyStats.requestCount++;
-  dailyStats.totalPromptTokens += usageInfo.inputTokens ?? 0;
-  dailyStats.totalCompletionTokens += usageInfo.outputTokens ?? 0;
-  dailyStats.retries += retries;
-  if (!response.ok) dailyStats.errors++;
-  incrementProtocolStats(sessionStats, 'anthropic', {
-    requestCount: 1,
-    totalPromptTokens: usageInfo.inputTokens ?? 0,
-    totalCompletionTokens: usageInfo.outputTokens ?? 0,
+  recordRequestComplete({
+    protocol: 'anthropic',
+    model,
+    inputTokens: usageInfo.inputTokens ?? 0,
+    outputTokens: usageInfo.outputTokens ?? 0,
+    latencyMs: durationMs,
+    success: response.ok,
     retries,
-    ...(response.ok ? {} : { errors: 1 }),
-  });
-  incrementProtocolStats(dailyStats, 'anthropic', {
-    requestCount: 1,
-    totalPromptTokens: usageInfo.inputTokens ?? 0,
-    totalCompletionTokens: usageInfo.outputTokens ?? 0,
-    retries,
-    ...(response.ok ? {} : { errors: 1 }),
+    ...(response.ok ? {} : { error: `upstream ${response.status}` }),
   });
 
   reply.status(response.status);

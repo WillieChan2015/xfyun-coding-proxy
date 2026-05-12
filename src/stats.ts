@@ -1,6 +1,7 @@
 import { fmtTokens } from './util';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { EventEmitter } from 'events';
 
 export const sessionStats = {
   requestCount: 0,
@@ -164,6 +165,71 @@ export function incrementProtocolStats(
   if (delta.totalCompletionTokens) p.totalCompletionTokens += delta.totalCompletionTokens;
   if (delta.retries) p.retries += delta.retries;
   if (delta.errors) p.errors += delta.errors;
+}
+
+// ---- EventEmitter 事件系统 ----
+
+export const statsEmitter = new EventEmitter();
+
+export type Protocol = 'openai' | 'anthropic' | 'ollama';
+
+export interface RequestCompleteEvent {
+  protocol: Protocol;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  latencyMs: number;
+  success: boolean;
+  retries: number;
+  error?: string;
+}
+
+/**
+ * 集中记录请求完成事件：更新 sessionStats/dailyStats + 协议统计 + 发射事件
+ * 替代各 handler 中分散的 sessionStats.xxx++ / dailyStats.xxx++ / incrementProtocolStats() 调用
+ */
+export function recordRequestComplete(event: RequestCompleteEvent): void {
+  const { protocol, inputTokens, outputTokens, latencyMs, success, retries } = event;
+
+  // 集中更新 sessionStats
+  sessionStats.requestCount++;
+  sessionStats.totalPromptTokens += inputTokens;
+  sessionStats.totalCompletionTokens += outputTokens;
+  sessionStats.retries += retries;
+  if (!success) sessionStats.errors++;
+
+  // 集中更新 dailyStats
+  dailyStats.requestCount++;
+  dailyStats.totalPromptTokens += inputTokens;
+  dailyStats.totalCompletionTokens += outputTokens;
+  dailyStats.retries += retries;
+  if (!success) dailyStats.errors++;
+
+  // 集中更新协议统计
+  incrementProtocolStats(sessionStats, protocol, {
+    requestCount: 1,
+    totalPromptTokens: inputTokens,
+    totalCompletionTokens: outputTokens,
+    retries,
+    ...(success ? {} : { errors: 1 }),
+  });
+  incrementProtocolStats(dailyStats, protocol, {
+    requestCount: 1,
+    totalPromptTokens: inputTokens,
+    totalCompletionTokens: outputTokens,
+    retries,
+    ...(success ? {} : { errors: 1 }),
+  });
+
+  // 发射事件
+  statsEmitter.emit('request:complete', event);
+}
+
+/**
+ * 记录请求开始事件，发射 request:start 事件供 Ink 组件订阅
+ */
+export function recordRequestStart(protocol: Protocol, model: string): void {
+  statsEmitter.emit('request:start', { protocol, model });
 }
 
 export function listStatsDates(logDir: string): string[] {

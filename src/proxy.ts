@@ -1,7 +1,7 @@
 import { FastifyRequest, FastifyReply, FastifyInstance } from 'fastify';
 import { config, DEFAULT_MODEL } from './config';
 import { extractTokenUsage, fmtTokens } from './util';
-import { sessionStats, dailyStats, incrementProtocolStats, rolloverDailyStats } from './stats';
+import { rolloverDailyStats, recordRequestComplete, recordRequestStart } from './stats';
 
 // HTTP 状态码级别的重试条件：429 限流、500 上游内部错误（含超时）、503 服务过载
 export const RETRYABLE_STATUS_CODES = new Set([429, 500, 503]);
@@ -431,6 +431,8 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     `request incoming | ${request.url} | stream=${isStream} | ${summarizeContentTypes(body)} | ua=${ua}`,
   );
 
+  recordRequestStart('openai', model);
+
   // ---- 步骤 2：构建上游请求 ----
   const upstreamUrl = buildUpstreamUrl(request.url);
 
@@ -480,12 +482,16 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     const errMsg = err instanceof Error ? err.message : String(err);
     request.log.error(`upstream fetch error | ${Date.now() - startTime}ms | ${errMsg}`);
 
-    sessionStats.requestCount++;
-    sessionStats.errors++;
-    dailyStats.requestCount++;
-    dailyStats.errors++;
-    incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, errors: 1 });
-    incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, errors: 1 });
+    recordRequestComplete({
+      protocol: 'openai',
+      model,
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: Date.now() - startTime,
+      success: false,
+      retries: 0,
+      error: errMsg,
+    });
 
     reply.status(502).send({
       error: {
@@ -509,14 +515,16 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
       `upstream error | ${response.status} | ${durationMs}ms | retries=${retries}${errDetail} | body=${responseBodyText.slice(0, 300)}`,
     );
 
-    sessionStats.requestCount++;
-    sessionStats.retries += retries;
-    sessionStats.errors++;
-    dailyStats.requestCount++;
-    dailyStats.retries += retries;
-    dailyStats.errors++;
-    incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, retries, errors: 1 });
-    incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, retries, errors: 1 });
+    recordRequestComplete({
+      protocol: 'openai',
+      model,
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: durationMs,
+      success: false,
+      retries,
+      error: `upstream ${response.status}`,
+    });
 
     reply.status(response.status);
     reply.send(responseBodyText);
@@ -529,14 +537,16 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
       `upstream error with empty body | ${response.status} | ${durationMs}ms | retries=${retries}`,
     );
 
-    sessionStats.requestCount++;
-    sessionStats.retries += retries;
-    sessionStats.errors++;
-    dailyStats.requestCount++;
-    dailyStats.retries += retries;
-    dailyStats.errors++;
-    incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, retries, errors: 1 });
-    incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, retries, errors: 1 });
+    recordRequestComplete({
+      protocol: 'openai',
+      model,
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: durationMs,
+      success: false,
+      retries,
+      error: `upstream ${response.status} empty body`,
+    });
 
     reply.status(response.status);
     reply.send({
@@ -555,14 +565,16 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
       `stream upstream error with no body | ${response.status} | ${durationMs}ms | retries=${retries}`,
     );
 
-    sessionStats.requestCount++;
-    sessionStats.retries += retries;
-    sessionStats.errors++;
-    dailyStats.requestCount++;
-    dailyStats.retries += retries;
-    dailyStats.errors++;
-    incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, retries, errors: 1 });
-    incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, retries, errors: 1 });
+    recordRequestComplete({
+      protocol: 'openai',
+      model,
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: durationMs,
+      success: false,
+      retries,
+      error: `upstream ${response.status} no stream body`,
+    });
 
     reply.status(response.status);
     reply.send({
@@ -652,14 +664,16 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
 
     if (streamError) {
       request.log.error(`stream aborted | ${durationMs}ms | ${streamError}`);
-      sessionStats.requestCount++;
-      sessionStats.errors++;
-      dailyStats.requestCount++;
-      dailyStats.errors++;
-      sessionStats.retries += retries;
-      dailyStats.retries += retries;
-      incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, errors: 1, retries });
-      incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, errors: 1, retries });
+      recordRequestComplete({
+        protocol: 'openai',
+        model,
+        inputTokens: 0,
+        outputTokens: 0,
+        latencyMs: durationMs,
+        success: false,
+        retries,
+        error: streamError,
+      });
       return;
     }
 
@@ -670,16 +684,15 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     request.log.info(
       `stream completed | ${durationMs}ms | ${tokenInfo}`.replace(/ \| $/, ''),
     );
-    sessionStats.requestCount++;
-    sessionStats.totalPromptTokens += promptTokens ?? 0;
-    sessionStats.totalCompletionTokens += completionTokens ?? 0;
-    sessionStats.retries += retries;
-    dailyStats.requestCount++;
-    dailyStats.totalPromptTokens += promptTokens ?? 0;
-    dailyStats.totalCompletionTokens += completionTokens ?? 0;
-    dailyStats.retries += retries;
-    incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, totalPromptTokens: promptTokens ?? 0, totalCompletionTokens: completionTokens ?? 0, retries });
-    incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, totalPromptTokens: promptTokens ?? 0, totalCompletionTokens: completionTokens ?? 0, retries });
+    recordRequestComplete({
+      protocol: 'openai',
+      model,
+      inputTokens: promptTokens ?? 0,
+      outputTokens: completionTokens ?? 0,
+      latencyMs: durationMs,
+      success: true,
+      retries,
+    });
     return;
   }
 
@@ -688,6 +701,16 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     request.log.error(
       `non-stream response with null body | ${response.status} | ${durationMs}ms | retries=${retries}`,
     );
+    recordRequestComplete({
+      protocol: 'openai',
+      model,
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: durationMs,
+      success: false,
+      retries,
+      error: 'upstream returned empty response body',
+    });
     reply.status(500).send({
       error: {
         message: 'upstream returned empty response body',
@@ -695,12 +718,6 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
         code: 500,
       },
     });
-    sessionStats.requestCount++;
-    sessionStats.errors++;
-    dailyStats.requestCount++;
-    dailyStats.errors++;
-    incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, errors: 1 });
-    incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, errors: 1 });
     return;
   }
 
@@ -729,18 +746,16 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     `request completed | ${durationMs}ms | ${tokenInfo}`.replace(/ \| $/, ''),
   );
 
-  sessionStats.requestCount++;
-  sessionStats.totalPromptTokens += usageInfo.promptTokens ?? 0;
-  sessionStats.totalCompletionTokens += usageInfo.completionTokens ?? 0;
-  sessionStats.retries += retries;
-  if (!response.ok) sessionStats.errors++;
-  dailyStats.requestCount++;
-  dailyStats.totalPromptTokens += usageInfo.promptTokens ?? 0;
-  dailyStats.totalCompletionTokens += usageInfo.completionTokens ?? 0;
-  dailyStats.retries += retries;
-  if (!response.ok) dailyStats.errors++;
-  incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, totalPromptTokens: usageInfo.promptTokens ?? 0, totalCompletionTokens: usageInfo.completionTokens ?? 0, retries, ...(response.ok ? {} : { errors: 1 }) });
-  incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, totalPromptTokens: usageInfo.promptTokens ?? 0, totalCompletionTokens: usageInfo.completionTokens ?? 0, retries, ...(response.ok ? {} : { errors: 1 }) });
+  recordRequestComplete({
+    protocol: 'openai',
+    model,
+    inputTokens: usageInfo.promptTokens ?? 0,
+    outputTokens: usageInfo.completionTokens ?? 0,
+    latencyMs: durationMs,
+    success: response.ok,
+    retries,
+    ...(response.ok ? {} : { error: `upstream ${response.status}` }),
+  });
 
   reply.status(response.status);
   reply.send(responseBody);
@@ -770,10 +785,15 @@ export async function handleGetProxy(
 
   request.log.info(`GET proxied | ${response.status} | ${request.url}`);
 
-  sessionStats.requestCount++;
-  dailyStats.requestCount++;
-  incrementProtocolStats(sessionStats, 'openai', { requestCount: 1 });
-  incrementProtocolStats(dailyStats, 'openai', { requestCount: 1 });
+  recordRequestComplete({
+    protocol: 'openai',
+    model: 'unknown',
+    inputTokens: 0,
+    outputTokens: 0,
+    latencyMs: 0,
+    success: response.ok,
+    retries: 0,
+  });
 
   reply.status(response.status);
   reply.header('Content-Type', response.headers.get('content-type') || 'application/json');
