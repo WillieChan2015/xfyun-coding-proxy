@@ -12,6 +12,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added / 新增
 
+- 新增启动时版本更新检查：代理启动后异步查询 npm registry 最新版本，发现新版本时在终端输出黄色提示（`Update available: X → Y`），引导用户执行 `npm i -g maas-coding-proxy` 升级。
+- Added startup version update check: after the proxy starts, it asynchronously queries the npm registry for the latest version and prints a yellow hint (`Update available: X → Y`) when an update is available, guiding users to upgrade via `npm i -g maas-coding-proxy`.
+- 新增 `NO_UPDATE_CHECK` 环境变量，设为非空值时跳过更新检查，适用于 CI/CD 或离线环境。
+- Added `NO_UPDATE_CHECK` environment variable; set to any non-empty value to skip the update check, useful for CI/CD or offline environments.
+- 更新检查结果缓存到 `{logDir}/.update-check.json`，24 小时内不重复请求 registry，缓存文件损坏时自动删除并重试。
+- Update check results are cached in `{logDir}/.update-check.json`; the registry is not queried more than once per 24 hours, and corrupted cache files are automatically deleted and retried.
+
 ### Changed / 变更
 
 ### Fixed / 修复
