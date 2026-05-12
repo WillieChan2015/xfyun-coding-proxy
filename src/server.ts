@@ -5,6 +5,7 @@ import { ResolvedConfig, config, DEFAULT_MODEL } from './config';
 import { handleProxy, handleGetProxy } from './proxy';
 import { handleOllamaChat, handleOllamaGenerate } from './ollama/handler';
 import { handleAnthropicMessages } from './anthropic/handler';
+import { estimateInputTokens } from './util';
 import { printSessionSummary, initDailyStats, saveDailyStats, rolloverDailyStats, dailyStats } from './stats';
 import { checkForUpdate } from './update-check.js';
 
@@ -84,7 +85,23 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
   server.get('/v1/*', handleGetProxy);
 
   // Anthropic 协议路由：带 /anthropic 前缀（Base URL = http://localhost:3000/anthropic）
+  // HEAD /anthropic：客户端启动时的连通性探测
+  server.head('/anthropic', async (_request, reply) => { reply.status(200).send(); });
   server.post('/anthropic/v1/messages', handleAnthropicMessages);
+  // count_tokens：上游不支持，本地按 1 token ≈ 4 字符估算
+  server.post('/anthropic/v1/messages/count_tokens', async (request: FastifyRequest, reply: FastifyReply) => {
+    const body = request.body as Record<string, unknown> | undefined;
+    if (!body) {
+      reply.status(400).send({
+        type: 'error',
+        error: { type: 'invalid_request_error', message: 'request body is required' },
+      });
+      return;
+    }
+    const inputTokens = estimateInputTokens(body);
+    request.log.info(`anthropic count_tokens | estimated=${inputTokens}`);
+    reply.send({ input_tokens: inputTokens });
+  });
   server.get('/anthropic/v1/models', async () => {
     return {
       object: 'list',
@@ -199,7 +216,7 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
       error: 'not found',
       method: request.method,
       url: request.url,
-      hint: 'Supported routes: POST /v1/chat/completions, POST /anthropic/v1/messages, POST /ollama/api/chat, POST /ollama/api/generate, GET /ollama/api/tags',
+      hint: 'Supported routes: POST /v1/chat/completions, POST /anthropic/v1/messages, POST /anthropic/v1/messages/count_tokens, POST /ollama/api/chat, POST /ollama/api/generate, GET /ollama/api/tags',
     });
   });
 
@@ -226,8 +243,15 @@ export async function startServer(server: FastifyInstance, cfg: ResolvedConfig):
   }
 
   // 优雅关停：收到 SIGINT/SIGTERM 后等待进行中的请求结束再退出
+  // 首次信号执行优雅关停，再次收到信号则强制退出
+  let shuttingDown = false;
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.on(signal, async () => {
+      if (shuttingDown) {
+        server.log.info(`Received ${signal} again, forcing exit`);
+        process.exit(1);
+      }
+      shuttingDown = true;
       server.log.info(`Received ${signal}, shutting down gracefully`);
       try {
         // 停止定时刷盘

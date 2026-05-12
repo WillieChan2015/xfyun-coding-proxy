@@ -12,9 +12,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added / 新增
 
+- 新增 Anthropic 协议 `count_tokens` 端点（`POST /anthropic/v1/messages/count_tokens`），按 1 token ≈ 4 字符本地估算输入 token 数。
+- Added Anthropic protocol `count_tokens` endpoint (`POST /anthropic/v1/messages/count_tokens`), estimating input tokens locally at ~1 token per 4 characters.
+- 新增 `HEAD /anthropic` 路由，支持客户端启动时的连通性探测。
+- Added `HEAD /anthropic` route for client connectivity probes on startup.
+
 ### Changed / 变更
 
+- 重构 `handleProxy` 和 `handleGetProxy` 中的协议统计逻辑，根据请求路径前缀动态判断协议归属。
+- Refactored protocol stats logic in `handleProxy` and `handleGetProxy` to dynamically determine protocol based on request path prefix.
+
 ### Fixed / 修复
+
+- 修复 `/ollama/v1/chat/completions` 和 `/ollama/v1/models` 请求被错误归入 OpenAI 协议统计的问题，现在正确归入 Ollama 统计。
+- Fixed `/ollama/v1/chat/completions` and `/ollama/v1/models` requests being incorrectly counted under OpenAI protocol stats; they now correctly count under Ollama.
+- 修复多次 Ctrl+C 无法退出程序的问题，首次信号执行优雅关停，再次收到信号则强制退出。
+- Fixed the issue where multiple Ctrl+C presses failed to exit the program; the first signal triggers graceful shutdown, subsequent signals force exit.
 
 ## [0.0.5-beta.7] - 2026-05-12
 

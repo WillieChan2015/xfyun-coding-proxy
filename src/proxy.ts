@@ -413,6 +413,8 @@ export async function fetchWithRetry(
  */
 export async function handleProxy(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   rolloverDailyStats(config.logDir);
+  // 根据请求路径前缀判断协议归属：/ollama/ 开头的请求归入 ollama，其余归入 openai
+  const protocol = request.url.startsWith('/ollama/') ? 'ollama' : 'openai';
   const startTime = Date.now();
   const body = request.body as Record<string, unknown> | undefined;
 
@@ -484,8 +486,8 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     sessionStats.errors++;
     dailyStats.requestCount++;
     dailyStats.errors++;
-    incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, errors: 1 });
-    incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, errors: 1 });
+    incrementProtocolStats(sessionStats, protocol, { requestCount: 1, errors: 1 });
+    incrementProtocolStats(dailyStats, protocol, { requestCount: 1, errors: 1 });
 
     reply.status(502).send({
       error: {
@@ -515,8 +517,8 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     dailyStats.requestCount++;
     dailyStats.retries += retries;
     dailyStats.errors++;
-    incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, retries, errors: 1 });
-    incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, retries, errors: 1 });
+    incrementProtocolStats(sessionStats, protocol, { requestCount: 1, retries, errors: 1 });
+    incrementProtocolStats(dailyStats, protocol, { requestCount: 1, retries, errors: 1 });
 
     reply.status(response.status);
     reply.send(responseBodyText);
@@ -535,8 +537,8 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     dailyStats.requestCount++;
     dailyStats.retries += retries;
     dailyStats.errors++;
-    incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, retries, errors: 1 });
-    incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, retries, errors: 1 });
+    incrementProtocolStats(sessionStats, protocol, { requestCount: 1, retries, errors: 1 });
+    incrementProtocolStats(dailyStats, protocol, { requestCount: 1, retries, errors: 1 });
 
     reply.status(response.status);
     reply.send({
@@ -561,8 +563,8 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     dailyStats.requestCount++;
     dailyStats.retries += retries;
     dailyStats.errors++;
-    incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, retries, errors: 1 });
-    incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, retries, errors: 1 });
+    incrementProtocolStats(sessionStats, protocol, { requestCount: 1, retries, errors: 1 });
+    incrementProtocolStats(dailyStats, protocol, { requestCount: 1, retries, errors: 1 });
 
     reply.status(response.status);
     reply.send({
@@ -658,8 +660,8 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
       dailyStats.errors++;
       sessionStats.retries += retries;
       dailyStats.retries += retries;
-      incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, errors: 1, retries });
-      incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, errors: 1, retries });
+      incrementProtocolStats(sessionStats, protocol, { requestCount: 1, errors: 1, retries });
+      incrementProtocolStats(dailyStats, protocol, { requestCount: 1, errors: 1, retries });
       return;
     }
 
@@ -678,8 +680,8 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     dailyStats.totalPromptTokens += promptTokens ?? 0;
     dailyStats.totalCompletionTokens += completionTokens ?? 0;
     dailyStats.retries += retries;
-    incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, totalPromptTokens: promptTokens ?? 0, totalCompletionTokens: completionTokens ?? 0, retries });
-    incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, totalPromptTokens: promptTokens ?? 0, totalCompletionTokens: completionTokens ?? 0, retries });
+    incrementProtocolStats(sessionStats, protocol, { requestCount: 1, totalPromptTokens: promptTokens ?? 0, totalCompletionTokens: completionTokens ?? 0, retries });
+    incrementProtocolStats(dailyStats, protocol, { requestCount: 1, totalPromptTokens: promptTokens ?? 0, totalCompletionTokens: completionTokens ?? 0, retries });
     return;
   }
 
@@ -699,8 +701,8 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     sessionStats.errors++;
     dailyStats.requestCount++;
     dailyStats.errors++;
-    incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, errors: 1 });
-    incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, errors: 1 });
+    incrementProtocolStats(sessionStats, protocol, { requestCount: 1, errors: 1 });
+    incrementProtocolStats(dailyStats, protocol, { requestCount: 1, errors: 1 });
     return;
   }
 
@@ -739,8 +741,8 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
   dailyStats.totalCompletionTokens += usageInfo.completionTokens ?? 0;
   dailyStats.retries += retries;
   if (!response.ok) dailyStats.errors++;
-  incrementProtocolStats(sessionStats, 'openai', { requestCount: 1, totalPromptTokens: usageInfo.promptTokens ?? 0, totalCompletionTokens: usageInfo.completionTokens ?? 0, retries, ...(response.ok ? {} : { errors: 1 }) });
-  incrementProtocolStats(dailyStats, 'openai', { requestCount: 1, totalPromptTokens: usageInfo.promptTokens ?? 0, totalCompletionTokens: usageInfo.completionTokens ?? 0, retries, ...(response.ok ? {} : { errors: 1 }) });
+  incrementProtocolStats(sessionStats, protocol, { requestCount: 1, totalPromptTokens: usageInfo.promptTokens ?? 0, totalCompletionTokens: usageInfo.completionTokens ?? 0, retries, ...(response.ok ? {} : { errors: 1 }) });
+  incrementProtocolStats(dailyStats, protocol, { requestCount: 1, totalPromptTokens: usageInfo.promptTokens ?? 0, totalCompletionTokens: usageInfo.completionTokens ?? 0, retries, ...(response.ok ? {} : { errors: 1 }) });
 
   reply.status(response.status);
   reply.send(responseBody);
@@ -754,6 +756,8 @@ export async function handleGetProxy(
   request: FastifyRequest,
   reply: FastifyReply,
 ): Promise<void> {
+  // 根据请求路径前缀判断协议归属：/ollama/ 开头的请求归入 ollama，其余归入 openai
+  const protocol = request.url.startsWith('/ollama/') ? 'ollama' : 'openai';
   const upstreamUrl = buildUpstreamUrl(request.url);
 
   const headers: Record<string, string> = {
@@ -772,8 +776,8 @@ export async function handleGetProxy(
 
   sessionStats.requestCount++;
   dailyStats.requestCount++;
-  incrementProtocolStats(sessionStats, 'openai', { requestCount: 1 });
-  incrementProtocolStats(dailyStats, 'openai', { requestCount: 1 });
+  incrementProtocolStats(sessionStats, protocol, { requestCount: 1 });
+  incrementProtocolStats(dailyStats, protocol, { requestCount: 1 });
 
   reply.status(response.status);
   reply.header('Content-Type', response.headers.get('content-type') || 'application/json');
