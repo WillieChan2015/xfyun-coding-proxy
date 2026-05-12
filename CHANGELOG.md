@@ -12,6 +12,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added / 新增
 
+### Changed / 变更
+
+### Fixed / 修复
+
+## [0.0.5-beta.8] - 2026-05-12
+
+### Added / 新增
+
 - 新增 Anthropic 协议 `count_tokens` 端点（`POST /anthropic/v1/messages/count_tokens`），按 1 token ≈ 4 字符本地估算输入 token 数。
 - Added Anthropic protocol `count_tokens` endpoint (`POST /anthropic/v1/messages/count_tokens`), estimating input tokens locally at ~1 token per 4 characters.
 - 新增 `HEAD /anthropic` 路由，支持客户端启动时的连通性探测。
