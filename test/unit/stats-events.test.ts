@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { statsEmitter, recordRequestStart, recordRequestComplete, sessionStats, dailyStats, ProtocolStats } from '../../src/stats';
+import { statsEmitter, recordRequestStart, recordRequestComplete, sessionStats, dailyStats } from '../../src/stats';
 
 // 保存/恢复 sessionStats 和 dailyStats，避免跨测试污染
 let savedSessionStats: typeof sessionStats;

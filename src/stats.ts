@@ -189,7 +189,7 @@ export interface RequestCompleteEvent {
  * 替代各 handler 中分散的 sessionStats.xxx++ / dailyStats.xxx++ / incrementProtocolStats() 调用
  */
 export function recordRequestComplete(event: RequestCompleteEvent): void {
-  const { protocol, inputTokens, outputTokens, latencyMs, success, retries } = event;
+  const { protocol, inputTokens, outputTokens, success, retries } = event;
 
   // 集中更新 sessionStats
   sessionStats.requestCount++;

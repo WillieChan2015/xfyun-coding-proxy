@@ -66,14 +66,14 @@ describe('buildUpstreamUrl', () => {
 });
 
 describe('RETRYABLE_STATUS_CODES', () => {
-  it('includes 429 and 503', () => {
+  it('includes 429, 500 and 503', () => {
     expect(RETRYABLE_STATUS_CODES.has(429)).toBe(true);
+    expect(RETRYABLE_STATUS_CODES.has(500)).toBe(true);
     expect(RETRYABLE_STATUS_CODES.has(503)).toBe(true);
   });
 
-  it('does not include 200 or 500', () => {
+  it('does not include 200', () => {
     expect(RETRYABLE_STATUS_CODES.has(200)).toBe(false);
-    expect(RETRYABLE_STATUS_CODES.has(500)).toBe(false);
   });
 });
 
