@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'bun:test';
+import { describe, it, expect, afterEach } from 'bun:test';
 import {
   requestStarted,
   requestFinished,
@@ -9,7 +9,18 @@ import {
   getLatencyStats,
   getRequestLog,
   recordRequestComplete,
+  sessionStats,
 } from '../../src/stats';
+
+// 清理 sessionStats，避免污染其他测试
+afterEach(() => {
+  sessionStats.requestCount = 0;
+  sessionStats.totalPromptTokens = 0;
+  sessionStats.totalCompletionTokens = 0;
+  sessionStats.retries = 0;
+  sessionStats.errors = 0;
+  sessionStats.protocols = {};
+});
 
 describe('concurrent tracking', () => {
   // 并发计数器是模块级状态，测试中注意已有数据
