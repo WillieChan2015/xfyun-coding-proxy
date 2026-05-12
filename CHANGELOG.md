@@ -12,6 +12,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added / 新增
 
+### Changed / 变更
+
+### Fixed / 修复
+
+## [0.0.5-beta.7] - 2026-05-12
+
+### Added / 新增
+
 - 新增 `-v` / `--version` 命令行参数，输出当前版本号。
 - Added `-v` / `--version` CLI flag to print the current version.
 - 新增启动时输出版本信息（`maas-coding-proxy vX.Y.Z`）。
