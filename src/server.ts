@@ -6,6 +6,10 @@ import { handleProxy, handleGetProxy } from './proxy';
 import { handleOllamaChat, handleOllamaGenerate } from './ollama/handler';
 import { handleAnthropicMessages } from './anthropic/handler';
 import { printSessionSummary, initDailyStats, saveDailyStats, dailyStats } from './stats';
+import { checkForUpdate } from './update-check.js';
+
+// 读取当前包版本，用于启动时更新检查
+const { version } = require('../package.json');
 let flushTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
@@ -211,6 +215,8 @@ export async function startServer(server: FastifyInstance, cfg: ResolvedConfig):
     server.log.info(`Forwarding /anthropic/* → ${cfg.anthropicBaseUrl} (Anthropic protocol)`);
     server.log.info(`Config file: ${cfg.configFile ?? '(none)'}`);
     server.log.info(`Log dir: ${cfg.logDir}`);
+    // 异步检查 npm registry 是否有新版本，不阻塞启动
+    checkForUpdate(cfg.logDir, version).catch(() => {});
   } catch (err) {
     server.log.error(err);
     process.exit(1);
