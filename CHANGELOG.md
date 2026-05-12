@@ -16,6 +16,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed / 修复
 
+## [0.0.5-beta.6] - 2026-05-12
+
+### Added / 新增
+
+- 请求入口日志新增 `user-agent` 字段，便于识别客户端来源（Claude Code、Cursor、VS Code 等）。
+- Added `user-agent` field to request entry logs for identifying client source (Claude Code, Cursor, VS Code, etc.).
+- Session Summary 新增日期范围显示，跨天会话显示为 `2026-05-11 ~ 2026-05-12`。
+- Added date range display to Session Summary; cross-day sessions show as `2026-05-11 ~ 2026-05-12`.
+
+### Changed / 变更
+
+- HTTP 500 加入自动重试条件（讯飞上游超时返回 500 是暂时性的）。
+- Added HTTP 500 to auto-retry conditions (iFlytek upstream timeouts returning 500 are transient).
+- Fastify `requestTimeout` 从 60s 调整为 180s，确保大于 fetch 上游超时 120s，避免 Fastify 先于 fetch 中断请求。
+- Increased Fastify `requestTimeout` from 60s to 180s, ensuring it exceeds the fetch upstream timeout of 120s to prevent premature request termination.
+
+### Fixed / 修复
+
+- 修复上游网络异常（超时、DNS 失败等）时错误响应格式与协议不匹配的问题：三个协议 handler 现在各自捕获 `fetchWithRetry` 异常并返回对应格式错误（Anthropic → `{ type: 'error', error: {...} }`，OpenAI → `{ error: {...} }`，Ollama → `{ error: '...' }`），之前异常被 Fastify 全局 handler 捕获后统一返回 OpenAI 格式，导致 Anthropic/Ollama 客户端无法正确解析。
+- Fixed error response format mismatch on upstream network failures (timeout, DNS, etc.): each protocol handler now catches `fetchWithRetry` exceptions and returns protocol-specific error formats (Anthropic → `{ type: 'error', error: {...} }`, OpenAI → `{ error: {...} }`, Ollama → `{ error: '...' }`). Previously, exceptions were caught by the Fastify global handler and always returned in OpenAI format, causing Anthropic/Ollama clients to fail parsing.
+- 修复跨天会话统计汇总始终显示启动日期的问题：新增 `rolloverDailyStats` 在每次请求入口和定时刷盘时检测日期翻转，跨天时先持久化旧数据再重置为新一天。
+- Fixed cross-day session summary always showing the startup date: added `rolloverDailyStats` that checks for date rollover on each request and periodic flush, persisting old data and resetting for the new day when a date change is detected.
+
 ## [0.0.5-beta.5] - 2026-05-12
 
 ### Added / 新增
