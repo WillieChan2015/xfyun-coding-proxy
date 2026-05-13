@@ -1,5 +1,6 @@
 import { FastifyRequest, FastifyReply, FastifyInstance } from 'fastify';
 import { config, DEFAULT_MODEL } from './config';
+import { readWithTimeout } from './util';
 import { extractTokenUsage, fmtTokens } from './util';
 import { sessionStats, dailyStats, incrementProtocolStats, rolloverDailyStats } from './stats';
 
@@ -594,7 +595,7 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
 
     try {
       while (true) {
-        const { done, value } = await reader.read();
+        const { done, value } = await readWithTimeout(reader, config.streamReadTimeout);
         if (done) break;
 
         const rawChunk = Buffer.from(value).toString('utf-8');

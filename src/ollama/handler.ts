@@ -1,5 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { config } from '../config';
+import { readWithTimeout } from '../util';
 import {
   fetchWithRetry,
   SSEFilter,
@@ -287,7 +288,7 @@ async function handleOllamaProxy(
 
     try {
       while (true) {
-        const { done, value } = await reader.read();
+        const { done, value } = await readWithTimeout(reader, config.streamReadTimeout);
         if (done) break;
 
         const rawChunk = Buffer.from(value).toString('utf-8');

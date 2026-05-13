@@ -73,6 +73,33 @@ function extractTextFromBlocks(blocks: unknown[]): number {
   return chars;
 }
 
+/**
+ * 带超时的 ReadableStream 读取
+ *
+ * ReadableStreamDefaultReader.read() 无原生超时参数，
+ * 上游在流中间停止发送数据（但未关闭连接）时，read() 会无限挂起。
+ * 用 Promise.race 给每次 read 加超时保护，超时后抛出 TimeoutError。
+ *
+ * @param reader - ReadableStream 的 reader
+ * @param timeoutMs - 单次 read 最长等待毫秒数
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function readWithTimeout(
+  reader: any,
+  timeoutMs: number,
+): Promise<{ done: boolean; value: Uint8Array }> {
+  const readPromise = reader.read();
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    setTimeout(() => {
+      reject(new Error(
+        `stream read timeout: no data received for ${timeoutMs}ms, ` +
+        'upstream may have stalled (large input causing long prefill, or network idle timeout)',
+      ));
+    }, timeoutMs);
+  });
+  return Promise.race([readPromise, timeoutPromise]);
+}
+
 export function fmtTokens(n: number): string {
   if (n >= 10000) {
     return `${(n / 1000).toFixed(1)}k(${n.toLocaleString()})`;

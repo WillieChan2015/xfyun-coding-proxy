@@ -1,5 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { config, DEFAULT_MODEL } from '../config';
+import { readWithTimeout } from '../util';
 import {
   fetchWithRetry,
   SSEFilter,
@@ -257,7 +258,7 @@ export async function handleAnthropicMessages(
 
     try {
       while (true) {
-        const { done, value } = await reader.read();
+        const { done, value } = await readWithTimeout(reader, config.streamReadTimeout);
         if (done) break;
 
         const rawChunk = Buffer.from(value).toString('utf-8');

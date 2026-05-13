@@ -19,6 +19,8 @@ export interface ResolvedConfig {
   logDir: string;
   statsDir: string;
   statsFlushInterval: number;
+  /** 流式 SSE 单次 read 超时（毫秒），防止上游挂住后 reader.read() 无限阻塞 */
+  streamReadTimeout: number;
   /** 实际加载的配置文件路径，未找到时为 undefined */
   configFile?: string;
 }
@@ -36,6 +38,7 @@ export let config: ResolvedConfig = {
   logDir: './logs',
   statsDir: './logs/stats',
   statsFlushInterval: 60_000,
+  streamReadTimeout: 60_000,
   configFile: undefined,
 };
 
@@ -112,6 +115,7 @@ export function loadConfig(cliOpts: CliOptions): ResolvedConfig {
     logDir: resolveLogDir(cliOpts.logDir),
     statsDir: join(resolveLogDir(cliOpts.logDir), 'stats'),
     statsFlushInterval: parseInt(process.env.STATS_FLUSH_INTERVAL_MS || '60000', 10),
+    streamReadTimeout: parseInt(process.env.STREAM_READ_TIMEOUT_MS || '60000', 10),
     configFile: envFile,
   };
 
