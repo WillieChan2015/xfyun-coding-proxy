@@ -6,12 +6,12 @@ import { handleProxy, handleGetProxy } from './proxy';
 import { handleOllamaChat, handleOllamaGenerate } from './ollama/handler';
 import { handleAnthropicMessages } from './anthropic/handler';
 import { estimateInputTokens } from './util';
-import { printSessionSummary, initDailyStats, saveDailyStats, rolloverDailyStats, dailyStats } from './stats';
+import { printSessionSummary, initDailyStats, saveDailyStats, rolloverDailyStats, dailyStats, recordRequestComplete, requestFinished, getRequestLog } from './stats';
 import { checkForUpdate } from './update-check.js';
 import { startMonitor } from './monitor';
 
 // 读取当前包版本，用于启动时更新检查
-const { version } = require('../package.json');
+const { name, version } = require('../package.json');
 let flushTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
@@ -87,10 +87,64 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
 
   await server.register(cors, { origin: true });
 
+  // 记录所有进入的请求（包括 body 解析失败的请求），便于排查客户端报错但日志无记录的问题
+  server.addHook('onRequest', async (request) => {
+    request.log.debug(`onRequest | ${request.method} ${request.url} | content-type=${request.headers['content-type'] ?? 'n/a'}`);
+  });
+
   // OpenAI 格式错误响应：客户端（OpenCode/Cursor 等）期望 { error: { message, type, code } } 结构
   server.setErrorHandler((error: FastifyError, request: FastifyRequest, reply: FastifyReply) => {
     const status = error.statusCode || 500;
-    request.log.error(`request error | ${status} | ${error.message}`);
+    const ua = request.headers['user-agent'] ?? 'unknown';
+    request.log.error(`request error | ${status} | ${error.message} | ua=${ua} | url=${request.url}`);
+
+    // 兜底：handler 中 recordRequestStart 之后若抛出未捕获异常，
+    // recordRequestComplete 不会被调用，pending 日志条目会卡在 processing。
+    // 在此处补调，确保日志状态正确更新。
+    // 通过查找 pending 条目判断是否需要补调：若该 requestId 仍有 pending 条目，
+    // 说明 handler 未调用 recordRequestComplete，需要此处兜底。
+    const hasPending = getRequestLog().some(
+      e => e.requestId === request.id && e.pending,
+    );
+    if (hasPending) {
+      const protocol = request.url.startsWith('/ollama/') ? 'ollama'
+        : request.url.startsWith('/anthropic/') ? 'anthropic'
+        : 'openai';
+      recordRequestComplete({
+        protocol,
+        model: DEFAULT_MODEL,
+        inputTokens: 0,
+        outputTokens: 0,
+        latencyMs: 0,
+        success: false,
+        requestId: request.id,
+        path: request.url,
+        ua,
+        retries: 0,
+        error: error.message,
+      });
+      requestFinished();
+    } else {
+      // handler 未调用 recordRequestStart（如 Fastify body 解析失败），
+      // 仍需记录错误到统计系统，避免客户端报错但统计无记录
+      const protocol = request.url.startsWith('/ollama/') ? 'ollama'
+        : request.url.startsWith('/anthropic/') ? 'anthropic'
+        : 'openai';
+      recordRequestComplete({
+        protocol,
+        model: DEFAULT_MODEL,
+        inputTokens: 0,
+        outputTokens: 0,
+        latencyMs: 0,
+        success: false,
+        requestId: request.id,
+        path: request.url,
+        ua,
+        retries: 0,
+        error: error.message,
+      });
+    }
+
     reply.status(status).send({
       error: {
         message: error.message || 'Internal server error',
@@ -249,7 +303,7 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
 export async function startServer(server: FastifyInstance, cfg: ResolvedConfig): Promise<void> {
   try {
     await server.listen({ port: cfg.port, host: '127.0.0.1' });
-    server.log.info(`maas-coding-proxy v${version}`);
+    server.log.info(`${name} v${version}`);
     server.log.info(`Forwarding /v1/* → ${cfg.baseUrl} (OpenAI protocol)`);
     server.log.info(`Forwarding /ollama/* → ${cfg.baseUrl} (Ollama protocol)`);
     server.log.info(`Forwarding /anthropic/* → ${cfg.anthropicBaseUrl} (Anthropic protocol)`);
@@ -263,9 +317,27 @@ export async function startServer(server: FastifyInstance, cfg: ResolvedConfig):
   }
 
   // Ink 监控面板：接管 stdout，按 q 退出时触发优雅关停
+  // 优雅关停逻辑：保存 stats → 关闭 server → 退出进程
+  const gracefulShutdown = async () => {
+    if (flushTimer) {
+      clearInterval(flushTimer);
+      flushTimer = null;
+    }
+    saveDailyStats(cfg.logDir, dailyStats);
+    if (monitorHandle) {
+      monitorHandle.unmount();
+    }
+    await server.close();
+    server.log.info('Server closed');
+    printSessionSummary();
+    process.exit(0);
+  };
+
   let monitorHandle: { unmount: () => void } | null = null;
   if (cfg.monitor) {
-    monitorHandle = startMonitor(version);
+    monitorHandle = startMonitor(name, version, () => {
+      gracefulShutdown().catch(() => process.exit(1));
+    });
   }
 
   // 优雅关停：收到 SIGINT/SIGTERM 后等待进行中的请求结束再退出
@@ -280,23 +352,7 @@ export async function startServer(server: FastifyInstance, cfg: ResolvedConfig):
       shuttingDown = true;
       server.log.info(`Received ${signal}, shutting down gracefully`);
       try {
-        // 停止定时刷盘
-        if (flushTimer) {
-          clearInterval(flushTimer);
-          flushTimer = null;
-        }
-        // 持久化当天统计
-        saveDailyStats(cfg.logDir, dailyStats);
-
-        // 先卸载 Ink 监控面板，恢复终端状态
-        if (monitorHandle) {
-          monitorHandle.unmount();
-        }
-
-        await server.close();
-        server.log.info('Server closed');
-        printSessionSummary();
-        process.exit(0);
+        await gracefulShutdown();
       } catch (err) {
         server.log.error(err, 'Error during shutdown');
         process.exit(1);

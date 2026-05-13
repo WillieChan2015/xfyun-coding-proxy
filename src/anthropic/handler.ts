@@ -100,7 +100,7 @@ export async function handleAnthropicMessages(
     `anthropic request | ${request.url} | stream=${isStream} | model=${model} | ua=${ua}`,
   );
 
-  recordRequestStart('anthropic', model);
+  recordRequestStart('anthropic', model, request.id, request.url, ua);
 
   // ---- 构建上游请求 ----
   const upstreamUrl = `${config.anthropicBaseUrl.replace(/\/$/, '')}/v1/messages`;
@@ -152,6 +152,13 @@ export async function handleAnthropicMessages(
     const errMsg = err instanceof Error ? err.message : String(err);
     request.log.error(`anthropic fetch error | ${Date.now() - startTime}ms | ${errMsg}`);
 
+    reply.status(502).send({
+      type: 'error',
+      error: {
+        type: 'api_error',
+        message: `upstream request failed: ${errMsg}`,
+      },
+    });
     recordRequestComplete({
       protocol: 'anthropic',
       model,
@@ -159,16 +166,11 @@ export async function handleAnthropicMessages(
       outputTokens: 0,
       latencyMs: Date.now() - startTime,
       success: false,
+      requestId: request.id,
+      path: request.url,
+      ua,
       retries: 0,
       error: errMsg,
-    });
-
-    reply.status(502).send({
-      type: 'error',
-      error: {
-        type: 'api_error',
-        message: `upstream request failed: ${errMsg}`,
-      },
     });
     requestFinished();
     return;
@@ -186,6 +188,8 @@ export async function handleAnthropicMessages(
       `anthropic upstream error | ${response.status} | ${durationMs}ms | retries=${retries}${errDetail}`,
     );
 
+    reply.status(response.status);
+    reply.send(responseBodyText);
     recordRequestComplete({
       protocol: 'anthropic',
       model,
@@ -193,12 +197,12 @@ export async function handleAnthropicMessages(
       outputTokens: 0,
       latencyMs: durationMs,
       success: false,
+      requestId: request.id,
+      path: request.url,
+      ua,
       retries,
       error: `upstream ${response.status}`,
     });
-
-    reply.status(response.status);
-    reply.send(responseBodyText);
     requestFinished();
     return;
   }
@@ -209,6 +213,13 @@ export async function handleAnthropicMessages(
       `anthropic upstream error with empty body | ${response.status} | ${durationMs}ms | retries=${retries}`,
     );
 
+    reply.status(response.status).send({
+      type: 'error',
+      error: {
+        type: 'api_error',
+        message: `upstream returned ${response.status} with empty body`,
+      },
+    });
     recordRequestComplete({
       protocol: 'anthropic',
       model,
@@ -216,16 +227,11 @@ export async function handleAnthropicMessages(
       outputTokens: 0,
       latencyMs: durationMs,
       success: false,
+      requestId: request.id,
+      path: request.url,
+      ua,
       retries,
       error: `upstream ${response.status} empty body`,
-    });
-
-    reply.status(response.status).send({
-      type: 'error',
-      error: {
-        type: 'api_error',
-        message: `upstream returned ${response.status} with empty body`,
-      },
     });
     requestFinished();
     return;
@@ -237,6 +243,13 @@ export async function handleAnthropicMessages(
       `anthropic stream upstream error with no body | ${response.status} | ${durationMs}ms | retries=${retries}`,
     );
 
+    reply.status(response.status).send({
+      type: 'error',
+      error: {
+        type: 'api_error',
+        message: `upstream returned ${response.status} with no stream body`,
+      },
+    });
     recordRequestComplete({
       protocol: 'anthropic',
       model,
@@ -244,16 +257,11 @@ export async function handleAnthropicMessages(
       outputTokens: 0,
       latencyMs: durationMs,
       success: false,
+      requestId: request.id,
+      path: request.url,
+      ua,
       retries,
       error: `upstream ${response.status} no stream body`,
-    });
-
-    reply.status(response.status).send({
-      type: 'error',
-      error: {
-        type: 'api_error',
-        message: `upstream returned ${response.status} with no stream body`,
-      },
     });
     requestFinished();
     return;
@@ -327,11 +335,11 @@ export async function handleAnthropicMessages(
       })}\n\n`;
       reply.raw.write(sseError);
     } finally {
-      reader.releaseLock();
-      reply.raw.end();
+      try { reader.releaseLock(); } catch { /* already released */ }
+      try { reply.raw.end(); } catch { /* client already closed */ }
       streamingFinished();
-      requestFinished();
     }
+    requestFinished();
 
     if (streamError) {
       request.log.error(`anthropic stream aborted | ${durationMs}ms | ${streamError}`);
@@ -342,6 +350,9 @@ export async function handleAnthropicMessages(
         outputTokens: 0,
         latencyMs: durationMs,
         success: false,
+        requestId: request.id,
+        path: request.url,
+        ua,
         retries,
         error: streamError,
       });
@@ -362,6 +373,9 @@ export async function handleAnthropicMessages(
       outputTokens: outputTokens ?? 0,
       latencyMs: durationMs,
       success: true,
+      requestId: request.id,
+      path: request.url,
+      ua,
       retries,
     });
     return;
@@ -372,6 +386,13 @@ export async function handleAnthropicMessages(
     request.log.error(
       `anthropic non-stream response with null body | ${response.status} | ${durationMs}ms | retries=${retries}`,
     );
+    reply.status(500).send({
+      type: 'error',
+      error: {
+        type: 'api_error',
+        message: 'upstream returned empty response body',
+      },
+    });
     recordRequestComplete({
       protocol: 'anthropic',
       model,
@@ -379,15 +400,11 @@ export async function handleAnthropicMessages(
       outputTokens: 0,
       latencyMs: durationMs,
       success: false,
+      requestId: request.id,
+      path: request.url,
+      ua,
       retries,
       error: 'upstream returned empty response body',
-    });
-    reply.status(500).send({
-      type: 'error',
-      error: {
-        type: 'api_error',
-        message: 'upstream returned empty response body',
-      },
     });
     requestFinished();
     return;
@@ -409,6 +426,8 @@ export async function handleAnthropicMessages(
     `anthropic request completed | ${durationMs}ms | ${tokenInfo}`.replace(/ \| $/, ''),
   );
 
+  reply.status(response.status);
+  reply.send(finalBody);
   recordRequestComplete({
     protocol: 'anthropic',
     model,
@@ -416,11 +435,11 @@ export async function handleAnthropicMessages(
     outputTokens: usageInfo.outputTokens ?? 0,
     latencyMs: durationMs,
     success: response.ok,
+    requestId: request.id,
+    path: request.url,
+    ua,
     retries,
     ...(response.ok ? {} : { error: `upstream ${response.status}` }),
   });
-
-  reply.status(response.status);
-  reply.send(finalBody);
   requestFinished();
 }

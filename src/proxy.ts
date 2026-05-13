@@ -2,7 +2,7 @@ import { FastifyRequest, FastifyReply, FastifyInstance } from 'fastify';
 import { config, DEFAULT_MODEL } from './config';
 import { readWithTimeout } from './util';
 import { extractTokenUsage, fmtTokens } from './util';
-import { rolloverDailyStats, recordRequestComplete, requestStarted, requestFinished, streamingStarted, streamingFinished } from './stats';
+import { rolloverDailyStats, recordRequestComplete, recordRequestStart, requestStarted, requestFinished, streamingStarted, streamingFinished, Protocol } from './stats';
 
 // HTTP 状态码级别的重试条件：429 限流、500 上游内部错误（含超时）、503 服务过载
 export const RETRYABLE_STATUS_CODES = new Set([429, 500, 503]);
@@ -431,9 +431,12 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
   }
 
   const ua = request.headers['user-agent'] ?? 'unknown';
+  const reqId = request.id;
+  const reqPath = request.url;
   request.log.info(
     `request incoming | ${request.url} | stream=${isStream} | ${summarizeContentTypes(body)} | ua=${ua}`,
   );
+  recordRequestStart(protocol as Protocol, model, reqId, reqPath, ua);
 
   // ---- 步骤 2：构建上游请求 ----
   const upstreamUrl = buildUpstreamUrl(request.url);
@@ -484,18 +487,6 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     const errMsg = err instanceof Error ? err.message : String(err);
     request.log.error(`upstream fetch error | ${Date.now() - startTime}ms | ${errMsg}`);
 
-    recordRequestComplete({
-      protocol: protocol as 'openai' | 'anthropic' | 'ollama',
-      model,
-      inputTokens: 0,
-      outputTokens: 0,
-      latencyMs: Date.now() - startTime,
-      success: false,
-      retries: 0,
-      error: errMsg,
-    });
-    requestFinished();
-
     reply.status(502).send({
       error: {
         message: `upstream request failed: ${errMsg}`,
@@ -503,6 +494,20 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
         code: 502,
       },
     });
+    recordRequestComplete({
+      protocol: protocol as 'openai' | 'anthropic' | 'ollama',
+      model,
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: Date.now() - startTime,
+      success: false,
+      requestId: reqId,
+      path: reqPath,
+      ua,
+      retries: 0,
+      error: errMsg,
+    });
+    requestFinished();
     return;
   }
 
@@ -518,6 +523,8 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
       `upstream error | ${response.status} | ${durationMs}ms | retries=${retries}${errDetail} | body=${responseBodyText.slice(0, 300)}`,
     );
 
+    reply.status(response.status);
+    reply.send(responseBodyText);
     recordRequestComplete({
       protocol: protocol as 'openai' | 'anthropic' | 'ollama',
       model,
@@ -525,13 +532,13 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
       outputTokens: 0,
       latencyMs: durationMs,
       success: false,
+      requestId: reqId,
+      path: reqPath,
+      ua,
       retries,
       error: `HTTP ${response.status}`,
     });
     requestFinished();
-
-    reply.status(response.status);
-    reply.send(responseBodyText);
     return;
   }
 
@@ -541,18 +548,6 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
       `upstream error with empty body | ${response.status} | ${durationMs}ms | retries=${retries}`,
     );
 
-    recordRequestComplete({
-      protocol: protocol as 'openai' | 'anthropic' | 'ollama',
-      model,
-      inputTokens: 0,
-      outputTokens: 0,
-      latencyMs: durationMs,
-      success: false,
-      retries,
-      error: `HTTP ${response.status} empty body`,
-    });
-    requestFinished();
-
     reply.status(response.status);
     reply.send({
       error: {
@@ -561,6 +556,20 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
         code: response.status,
       },
     });
+    recordRequestComplete({
+      protocol: protocol as 'openai' | 'anthropic' | 'ollama',
+      model,
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: durationMs,
+      success: false,
+      requestId: reqId,
+      path: reqPath,
+      ua,
+      retries,
+      error: `HTTP ${response.status} empty body`,
+    });
+    requestFinished();
     return;
   }
 
@@ -570,18 +579,6 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
       `stream upstream error with no body | ${response.status} | ${durationMs}ms | retries=${retries}`,
     );
 
-    recordRequestComplete({
-      protocol: protocol as 'openai' | 'anthropic' | 'ollama',
-      model,
-      inputTokens: 0,
-      outputTokens: 0,
-      latencyMs: durationMs,
-      success: false,
-      retries,
-      error: `HTTP ${response.status} no stream body`,
-    });
-    requestFinished();
-
     reply.status(response.status);
     reply.send({
       error: {
@@ -590,6 +587,20 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
         code: response.status,
       },
     });
+    recordRequestComplete({
+      protocol: protocol as 'openai' | 'anthropic' | 'ollama',
+      model,
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: durationMs,
+      success: false,
+      requestId: reqId,
+      path: reqPath,
+      ua,
+      retries,
+      error: `HTTP ${response.status} no stream body`,
+    });
+    requestFinished();
     return;
   }
 
@@ -666,8 +677,8 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
       reply.raw.write(sseError);
     } finally {
       streamingFinished();
-      reader.releaseLock();
-      reply.raw.end();
+      try { reader.releaseLock(); } catch { /* already released */ }
+      try { reply.raw.end(); } catch { /* client already closed */ }
     }
 
     if (streamError) {
@@ -679,6 +690,9 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
         outputTokens: completionTokens ?? 0,
         latencyMs: durationMs,
         success: false,
+        requestId: reqId,
+        path: reqPath,
+        ua,
         retries,
         error: streamError,
       });
@@ -700,6 +714,9 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
       outputTokens: completionTokens ?? 0,
       latencyMs: durationMs,
       success: true,
+      requestId: reqId,
+      path: reqPath,
+      ua,
       retries,
     });
     requestFinished();
@@ -711,18 +728,6 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     request.log.error(
       `non-stream response with null body | ${response.status} | ${durationMs}ms | retries=${retries}`,
     );
-    recordRequestComplete({
-      protocol: protocol as 'openai' | 'anthropic' | 'ollama',
-      model,
-      inputTokens: 0,
-      outputTokens: 0,
-      latencyMs: durationMs,
-      success: false,
-      retries,
-      error: 'empty response body',
-    });
-    requestFinished();
-
     reply.status(500).send({
       error: {
         message: 'upstream returned empty response body',
@@ -730,6 +735,20 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
         code: 500,
       },
     });
+    recordRequestComplete({
+      protocol: protocol as 'openai' | 'anthropic' | 'ollama',
+      model,
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: durationMs,
+      success: false,
+      requestId: reqId,
+      path: reqPath,
+      ua,
+      retries,
+      error: 'empty response body',
+    });
+    requestFinished();
     return;
   }
 
@@ -758,6 +777,8 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     `request completed | ${durationMs}ms | ${tokenInfo}`.replace(/ \| $/, ''),
   );
 
+  reply.status(response.status);
+  reply.send(responseBody);
   recordRequestComplete({
     protocol: protocol as 'openai' | 'anthropic' | 'ollama',
     model,
@@ -765,12 +786,12 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     outputTokens: usageInfo.completionTokens ?? 0,
     latencyMs: durationMs,
     success: response.ok,
+    requestId: reqId,
+    path: reqPath,
+    ua,
     retries,
   });
   requestFinished();
-
-  reply.status(response.status);
-  reply.send(responseBody);
 }
 
 /**
@@ -782,6 +803,7 @@ export async function handleGetProxy(
   reply: FastifyReply,
 ): Promise<void> {
   requestStarted();
+  const ua = request.headers['user-agent'] ?? 'unknown';
   // 根据请求路径前缀判断协议归属：/ollama/ 开头的请求归入 ollama，其余归入 openai
   const protocol = request.url.startsWith('/ollama/') ? 'ollama' : 'openai';
   const upstreamUrl = buildUpstreamUrl(request.url);
@@ -800,6 +822,9 @@ export async function handleGetProxy(
 
   request.log.info(`GET proxied | ${response.status} | ${request.url}`);
 
+  reply.status(response.status);
+  reply.header('Content-Type', response.headers.get('content-type') || 'application/json');
+  reply.send(body);
   recordRequestComplete({
     protocol: protocol as 'openai' | 'anthropic' | 'ollama',
     model: 'unknown',
@@ -807,11 +832,10 @@ export async function handleGetProxy(
     outputTokens: 0,
     latencyMs: 0,
     success: true,
+    requestId: request.id,
+    path: request.url,
+    ua,
     retries: 0,
   });
   requestFinished();
-
-  reply.status(response.status);
-  reply.header('Content-Type', response.headers.get('content-type') || 'application/json');
-  reply.send(body);
 }

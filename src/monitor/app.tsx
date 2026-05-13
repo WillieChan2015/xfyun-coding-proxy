@@ -57,27 +57,40 @@ function getProtocolUsage(): { name: string; tokens: number }[] {
   }));
 }
 
+/** 格式化为本地时间 2026-05-13 10:11:03.676 */
+function formatLocalTime(ts: number): string {
+  const d = new Date(ts);
+  const pad = (n: number, len = 2) => String(n).padStart(len, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+}
+
 /** 从 RequestLogEntry 转换为 LogEntry */
 function toLogEntries(): LogEntry[] {
   const log = getRequestLog();
   return log.map(entry => ({
-    time: new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false }),
+    time: formatLocalTime(entry.timestamp),
+    timestamp: entry.timestamp,
     method: entry.method,
     path: entry.path,
     protocol: entry.protocol,
     model: entry.model,
     latencyMs: entry.latencyMs,
-    tokens: entry.inputTokens + entry.outputTokens,
+    inputTokens: entry.inputTokens,
+    outputTokens: entry.outputTokens,
     success: entry.success,
+    pending: entry.pending,
+    requestId: entry.requestId,
+    ua: entry.ua,
   }));
 }
 
 interface AppProps {
+  name: string;
   version: string;
   onQuit: () => void;
 }
 
-export function MonitorApp({ version, onQuit }: AppProps) {
+export function MonitorApp({ name, version, onQuit }: AppProps) {
   const { exit } = useApp();
 
   const [state, setState] = useState<MonitorState>({
@@ -117,13 +130,18 @@ export function MonitorApp({ version, onQuit }: AppProps) {
 
   // 订阅 stats 事件
   useEffect(() => {
+    const onStart = () => {
+      refreshState();
+    };
     const onComplete = (_event: RequestCompleteEvent) => {
       requestTimestamps.push(Date.now());
       refreshState();
     };
 
+    statsEmitter.on('request:start', onStart);
     statsEmitter.on('request:complete', onComplete);
     return () => {
+      statsEmitter.off('request:start', onStart);
       statsEmitter.off('request:complete', onComplete);
     };
   }, [refreshState]);
@@ -136,6 +154,7 @@ export function MonitorApp({ version, onQuit }: AppProps) {
         requestsPerMin: getRequestsPerMin(),
         active: getActiveRequests(),
         streaming: getStreamingRequests(),
+        logEntries: toLogEntries(),
       }));
     }, 1000);
     return () => clearInterval(interval);
@@ -160,7 +179,7 @@ export function MonitorApp({ version, onQuit }: AppProps) {
 
   return (
     <Box flexDirection="column">
-      <Header version={version} requestsPerMin={state.requestsPerMin} successRate={state.successRate} />
+      <Header name={name} version={version} requestsPerMin={state.requestsPerMin} successRate={state.successRate} />
       <Box flexDirection="row">
         <Box width="50%">
           <TokenPanel input={state.tokenInput} output={state.tokenOutput} byProtocol={state.byProtocol} />

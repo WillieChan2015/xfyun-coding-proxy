@@ -53,6 +53,7 @@ export async function handleOllamaTags(
   reply: FastifyReply,
 ): Promise<void> {
   requestStarted();
+  const ua = request.headers['user-agent'] ?? 'unknown';
   const upstreamUrl = buildUpstreamUrl('/v1/models');
 
   const headers: Record<string, string> = {
@@ -70,6 +71,7 @@ export async function handleOllamaTags(
     request.log.info(`ollama tags | ${response.status}`);
 
     if (!response.ok) {
+      reply.status(response.status).send({ error: body });
       recordRequestComplete({
         protocol: 'ollama',
         model: 'unknown',
@@ -77,10 +79,12 @@ export async function handleOllamaTags(
         outputTokens: 0,
         latencyMs: 0,
         success: false,
+        requestId: request.id,
+        path: request.url,
+        ua,
         retries: 0,
         error: `upstream ${response.status}`,
       });
-      reply.status(response.status).send({ error: body });
       requestFinished();
       return;
     }
@@ -88,6 +92,7 @@ export async function handleOllamaTags(
     const openai = JSON.parse(body) as Record<string, unknown>;
     const ollamaTags = convertTagsResponse(openai);
 
+    reply.status(200).send(ollamaTags);
     recordRequestComplete({
       protocol: 'ollama',
       model: 'unknown',
@@ -95,10 +100,11 @@ export async function handleOllamaTags(
       outputTokens: 0,
       latencyMs: 0,
       success: true,
+      requestId: request.id,
+      path: request.url,
+      ua,
       retries: 0,
     });
-
-    reply.status(200).send(ollamaTags);
     requestFinished();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -110,6 +116,9 @@ export async function handleOllamaTags(
       outputTokens: 0,
       latencyMs: 0,
       success: false,
+      requestId: request.id,
+      path: request.url,
+      ua,
       retries: 0,
       error: msg,
     });
@@ -154,7 +163,7 @@ async function handleOllamaProxy(
     `ollama ${endpoint} | stream=${isStream} | model=${rawBody.model ?? 'unknown'} | ua=${ua}`,
   );
 
-  recordRequestStart('ollama', String(rawBody.model ?? 'unknown'));
+  recordRequestStart('ollama', String(rawBody.model ?? 'unknown'), request.id, request.url, ua);
 
   // ---- 步骤 2：构建上游请求 ----
   const upstreamUrl = buildUpstreamUrl('/v1/chat/completions');
@@ -189,6 +198,7 @@ async function handleOllamaProxy(
     const errMsg = err instanceof Error ? err.message : String(err);
     request.log.error(`ollama upstream fetch error | ${Date.now() - startTime}ms | ${errMsg}`);
 
+    reply.status(502).send({ error: `upstream request failed: ${errMsg}` });
     recordRequestComplete({
       protocol: 'ollama',
       model: String(rawBody.model ?? 'unknown'),
@@ -196,11 +206,12 @@ async function handleOllamaProxy(
       outputTokens: 0,
       latencyMs: Date.now() - startTime,
       success: false,
+      requestId: request.id,
+      path: request.url,
+      ua,
       retries: 0,
       error: errMsg,
     });
-
-    reply.status(502).send({ error: `upstream request failed: ${errMsg}` });
     requestFinished();
     return;
   }
@@ -212,16 +223,6 @@ async function handleOllamaProxy(
   // 4a. 非流式请求的上游错误：转换为 Ollama 错误格式返回
   if (!response.ok && !isStream && responseBodyText) {
     request.log.error(`ollama upstream error | ${response.status} | ${durationMs}ms`);
-    recordRequestComplete({
-      protocol: 'ollama',
-      model: String(rawBody.model ?? 'unknown'),
-      inputTokens: 0,
-      outputTokens: 0,
-      latencyMs: durationMs,
-      success: false,
-      retries,
-      error: `upstream ${response.status}`,
-    });
 
     try {
       const errJson = JSON.parse(responseBodyText) as Record<string, unknown>;
@@ -229,6 +230,19 @@ async function handleOllamaProxy(
     } catch {
       reply.status(response.status).send({ error: responseBodyText.slice(0, 200) });
     }
+    recordRequestComplete({
+      protocol: 'ollama',
+      model: String(rawBody.model ?? 'unknown'),
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: durationMs,
+      success: false,
+      requestId: request.id,
+      path: request.url,
+      ua,
+      retries,
+      error: `upstream ${response.status}`,
+    });
     requestFinished();
     return;
   }
@@ -262,6 +276,8 @@ async function handleOllamaProxy(
           : '';
 
       request.log.info(`ollama ${endpoint} completed | ${durationMs}ms | ${tokenInfo}`);
+
+      reply.status(200).send(ollamaResponse);
       recordRequestComplete({
         protocol: 'ollama',
         model: String(rawBody.model ?? 'unknown'),
@@ -269,13 +285,15 @@ async function handleOllamaProxy(
         outputTokens: usageInfo.completionTokens ?? 0,
         latencyMs: durationMs,
         success: true,
+        requestId: request.id,
+        path: request.url,
+        ua,
         retries,
       });
-
-      reply.status(200).send(ollamaResponse);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       request.log.error(`ollama response parse error | ${msg}`);
+      reply.status(500).send({ error: `response parse error: ${msg}` });
       recordRequestComplete({
         protocol: 'ollama',
         model: String(rawBody.model ?? 'unknown'),
@@ -283,10 +301,12 @@ async function handleOllamaProxy(
         outputTokens: 0,
         latencyMs: durationMs,
         success: false,
+        requestId: request.id,
+        path: request.url,
+        ua,
         retries: 0,
         error: msg,
       });
-      reply.status(500).send({ error: `response parse error: ${msg}` });
     }
     requestFinished();
     return;
@@ -349,11 +369,11 @@ async function handleOllamaProxy(
       const errorLine = JSON.stringify({ error: `stream interrupted: ${errMsg}` }) + '\n';
       reply.raw.write(errorLine);
     } finally {
-      reader.releaseLock();
-      reply.raw.end();
+      try { reader.releaseLock(); } catch { /* already released */ }
+      try { reply.raw.end(); } catch { /* client already closed */ }
       streamingFinished();
-      requestFinished();
     }
+    requestFinished();
 
     if (streamError) {
       recordRequestComplete({
@@ -363,6 +383,9 @@ async function handleOllamaProxy(
         outputTokens: 0,
         latencyMs: durationMs,
         success: false,
+        requestId: request.id,
+        path: request.url,
+        ua,
         retries,
         error: streamError,
       });
@@ -379,6 +402,9 @@ async function handleOllamaProxy(
         outputTokens: completionTokens ?? 0,
         latencyMs: durationMs,
         success: true,
+        requestId: request.id,
+        path: request.url,
+        ua,
         retries,
       });
     }

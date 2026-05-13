@@ -181,6 +181,9 @@ export interface RequestCompleteEvent {
   latencyMs: number;
   success: boolean;
   retries: number;
+  requestId?: string;
+  path?: string;
+  ua?: string;
   error?: string;
 }
 
@@ -230,30 +233,59 @@ export function recordRequestComplete(event: RequestCompleteEvent): void {
     latencyWindow.shift();
   }
 
-  // 请求日志缓冲区：构建日志条目并推入环形缓冲区
+  // 请求日志缓冲区：查找并更新 pending 条目，或新增
+  const pendingIdx = event.requestId
+    ? requestLog.findIndex(e => e.pending && e.requestId === event.requestId)
+    : -1;
+
   const logEntry: RequestLogEntry = {
-    timestamp: Date.now(),
+    timestamp: pendingIdx >= 0 ? requestLog[pendingIdx].timestamp : Date.now(),
     method: 'POST',
-    path: `/${event.protocol}`,
+    path: event.path ?? `/${event.protocol}`,
     protocol: event.protocol,
     model: event.model,
     latencyMs: event.latencyMs,
     inputTokens: event.inputTokens,
     outputTokens: event.outputTokens,
     success: event.success,
+    ...(event.requestId ? { requestId: event.requestId } : {}),
+    ...(event.ua ? { ua: event.ua } : {}),
     ...(event.error ? { error: event.error } : {}),
   };
-  requestLog.push(logEntry);
-  if (requestLog.length > LOG_BUFFER_SIZE) {
-    requestLog.shift();
+
+  if (pendingIdx >= 0) {
+    requestLog[pendingIdx] = logEntry;
+  } else {
+    requestLog.push(logEntry);
+    if (requestLog.length > LOG_BUFFER_SIZE) {
+      requestLog.shift();
+    }
   }
 }
 
 /**
- * 记录请求开始事件，发射 request:start 事件供 Ink 组件订阅
+ * 记录请求开始事件：推入 pending 日志条目 + 发射事件
  */
-export function recordRequestStart(protocol: Protocol, model: string): void {
-  statsEmitter.emit('request:start', { protocol, model });
+export function recordRequestStart(protocol: Protocol, model: string, requestId?: string, path?: string, ua?: string): void {
+  const entry: RequestLogEntry = {
+    timestamp: Date.now(),
+    method: 'POST',
+    path: path ?? `/${protocol}`,
+    protocol,
+    model,
+    latencyMs: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    success: true,
+    pending: true,
+    ...(requestId ? { requestId } : {}),
+    ...(ua ? { ua } : {}),
+  };
+  requestLog.push(entry);
+  if (requestLog.length > LOG_BUFFER_SIZE) {
+    requestLog.shift();
+  }
+  statsEmitter.emit('request:start', { protocol, model, requestId });
 }
 
 // ---- 并发追踪 ----
@@ -310,6 +342,9 @@ export interface RequestLogEntry {
   inputTokens: number;
   outputTokens: number;
   success: boolean;
+  pending?: boolean;
+  requestId?: string;
+  ua?: string;
   error?: string;
 }
 
@@ -445,11 +480,12 @@ export function printSessionSummary(): void {
     console.log(`  Tokens:         ${fmtTokens(totalDailyTokens)}`);
     const todayProtocolKeys = Object.keys(dailyStats.protocols);
     if (todayProtocolKeys.length > 0) {
-      const protocolSummary = todayProtocolKeys
-        .sort((a, b) => dailyStats.protocols[b].requestCount - dailyStats.protocols[a].requestCount)
-        .map(name => `${name}(${dailyStats.protocols[name].requestCount})`)
-        .join(' ');
-      console.log(`    ${protocolSummary}`);
+      const sorted = todayProtocolKeys.sort((a, b) => dailyStats.protocols[b].requestCount - dailyStats.protocols[a].requestCount);
+      for (const name of sorted) {
+        const p = dailyStats.protocols[name];
+        const totalTok = p.totalPromptTokens + p.totalCompletionTokens;
+        console.log(`    ${name.padEnd(14)}${String(p.requestCount).padStart(5)} req   ${fmtTokens(totalTok).padStart(14)} tok   ${String(p.errors).padStart(1)} err`);
+      }
     }
   }
 

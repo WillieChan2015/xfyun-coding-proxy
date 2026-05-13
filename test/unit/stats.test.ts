@@ -365,8 +365,10 @@ describe('printSessionSummary with protocols', () => {
       anthropic: { requestCount: 3, totalPromptTokens: 300, totalCompletionTokens: 200, retries: 0, errors: 0 },
     };
     const output = captureOutput(() => printSessionSummary());
-    expect(output).toContain('openai(7)');
-    expect(output).toContain('anthropic(3)');
+    expect(output).toMatch(/openai\s+7 req/);
+    expect(output).toMatch(/anthropic\s+3 req/);
+    expect(output).toContain('1000 tok');
+    expect(output).toContain('500 tok');
 
     // Reset
     dailyStats.date = origDate;
