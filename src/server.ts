@@ -8,6 +8,7 @@ import { handleAnthropicMessages } from './anthropic/handler';
 import { estimateInputTokens } from './util';
 import { printSessionSummary, initDailyStats, saveDailyStats, rolloverDailyStats, dailyStats } from './stats';
 import { checkForUpdate } from './update-check.js';
+import { startMonitor } from './monitor';
 
 // 读取当前包版本，用于启动时更新检查
 const { version } = require('../package.json');
@@ -33,6 +34,41 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
     }
   }
 
+  // Ink 模式下移除 console transport，避免 pino 输出破坏 Ink 渲染
+  const loggerTargets = cfg.monitor
+    ? [
+        {
+          target: './pretty-roll-transport.js',
+          level: 'info' as const,
+          options: {
+            file: path.join(cfg.logDir, 'proxy.log'),
+            frequency: 'daily',
+            dateFormat: 'yyyy-MM-dd',
+            mkdir: true,
+            size: '50m',
+            limit: { count: 7 },
+          },
+        },
+      ]
+    : [
+        {
+          target: '@fastify/one-line-logger',
+          level: 'info' as const,
+        },
+        {
+          target: './pretty-roll-transport.js',
+          level: 'info' as const,
+          options: {
+            file: path.join(cfg.logDir, 'proxy.log'),
+            frequency: 'daily',
+            dateFormat: 'yyyy-MM-dd',
+            mkdir: true,
+            size: '50m',
+            limit: { count: 7 },
+          },
+        },
+      ];
+
   const server = Fastify({
     // 超时与 body 限制：防止连接挂死/超大请求拖垮本地代理
     // requestTimeout 需大于 fetch 上游超时(120s)，否则 Fastify 会先于 fetch 中断请求
@@ -44,24 +80,7 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
       // 防止 authorization 被记录到日志（敏感凭据保护）
       redact: ['req.headers.authorization'],
       transport: {
-        targets: [
-          {
-            target: '@fastify/one-line-logger',
-            level: 'info',
-          },
-          {
-            target: './pretty-roll-transport.js',
-            level: 'info',
-            options: {
-              file: path.join(cfg.logDir, 'proxy.log'),
-              frequency: 'daily',
-              dateFormat: 'yyyy-MM-dd',
-              mkdir: true,
-              size: '50m',
-              limit: { count: 7 },
-            },
-          },
-        ],
+        targets: loggerTargets,
       },
     },
   });
@@ -225,6 +244,7 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
 
 /**
  * 启动服务器监听 + 注册 SIGINT/SIGTERM 优雅关停
+ * 若 cfg.monitor 为 true，启动 Ink 监控面板
  */
 export async function startServer(server: FastifyInstance, cfg: ResolvedConfig): Promise<void> {
   try {
@@ -240,6 +260,12 @@ export async function startServer(server: FastifyInstance, cfg: ResolvedConfig):
   } catch (err) {
     server.log.error(err);
     process.exit(1);
+  }
+
+  // Ink 监控面板：接管 stdout，按 q 退出时触发优雅关停
+  let monitorHandle: { unmount: () => void } | null = null;
+  if (cfg.monitor) {
+    monitorHandle = startMonitor(version);
   }
 
   // 优雅关停：收到 SIGINT/SIGTERM 后等待进行中的请求结束再退出
@@ -261,6 +287,11 @@ export async function startServer(server: FastifyInstance, cfg: ResolvedConfig):
         }
         // 持久化当天统计
         saveDailyStats(cfg.logDir, dailyStats);
+
+        // 先卸载 Ink 监控面板，恢复终端状态
+        if (monitorHandle) {
+          monitorHandle.unmount();
+        }
 
         await server.close();
         server.log.info('Server closed');

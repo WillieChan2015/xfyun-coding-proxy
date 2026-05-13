@@ -25,12 +25,20 @@ pnpm release:prepare # 版本准备（bump + changelog + tag）
 ```
 src/
 ├── cli.ts              # CLI 入口（stats/setup/start 命令）
-├── server.ts           # HTTP 服务器启动、信号处理、定时刷盘
+├── server.ts           # HTTP 服务器启动、信号处理、定时刷盘、Ink 监控集成
 ├── config.ts           # 环境变量配置加载
 ├── proxy.ts            # OpenAI 协议 handler（/v1/*）
-├── stats.ts            # 统计数据模型、持久化、打印函数
+├── stats.ts            # 统计数据模型、持久化、事件发射、并发/延迟追踪
 ├── stats-cmd.ts        # CLI stats 子命令逻辑
 ├── util.ts             # 工具函数（token 提取、格式化）
+├── monitor/            # Ink 实时监控面板
+│   ├── index.ts        # 监控入口（startMonitor）
+│   ├── app.tsx         # MonitorApp 主组件
+│   ├── header.tsx      # 顶部状态栏
+│   ├── token-panel.tsx # Token 用量面板
+│   ├── request-panel.tsx # 请求状态面板
+│   ├── log-stream.tsx  # 请求日志流
+│   └── footer.tsx      # 底部快捷键提示
 ├── anthropic/
 │   └── handler.ts      # Anthropic 协议 handler（/anthropic/v1/messages）
 └── ollama/
@@ -39,7 +47,7 @@ src/
 
 **请求流转**：IDE → server.ts 路由分发 → 对应协议 handler → 转换请求格式 → 调用讯飞 API → 转换响应格式 → 返回 IDE
 
-**统计系统**：双层结构——sessionStats（内存，进程退出时丢弃）+ dailyStats（持久化到 `logs/stats/YYYY-MM-DD.json`，60s 定时刷盘）。三个 handler 各自在出口点直接 `sessionStats.xxx++` / `dailyStats.xxx++`。
+**统计系统**：双层结构——sessionStats（内存，进程退出时丢弃）+ dailyStats（持久化到 `logs/stats/YYYY-MM-DD.json`，60s 定时刷盘）。三个 handler 通过 `recordRequestComplete()` 集中更新统计 + 发射事件。Ink 监控面板订阅 `statsEmitter` 事件实时刷新。
 
 ## Conventions
 

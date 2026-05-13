@@ -16,6 +16,8 @@ export interface ResolvedConfig {
   maxRetries: number;
   retryDelay: number;
   verbose: boolean;
+  /** 是否启用实时监控面板，可通过 --no-monitor 或 MONITOR=false 禁用 */
+  monitor: boolean;
   logDir: string;
   statsDir: string;
   statsFlushInterval: number;
@@ -35,6 +37,7 @@ export let config: ResolvedConfig = {
   maxRetries: 3,
   retryDelay: 1000,
   verbose: false,
+  monitor: true,
   logDir: './logs',
   statsDir: './logs/stats',
   statsFlushInterval: 60_000,
@@ -112,6 +115,8 @@ export function loadConfig(cliOpts: CliOptions): ResolvedConfig {
     maxRetries: cliOpts.maxRetries ?? parseInt(process.env.MAX_RETRIES || '3', 10),
     retryDelay: cliOpts.retryDelay ?? parseInt(process.env.RETRY_DELAY_MS || '1000', 10),
     verbose: cliOpts.verbose ?? process.env.VERBOSE === 'true',
+    // monitor: CLI --no-monitor(false) 优先，其次环境变量 MONITOR=false/0 禁用，默认 true
+    monitor: cliOpts.monitor ?? !['false', '0'].includes((process.env.MONITOR ?? '').toLowerCase()),
     logDir: resolveLogDir(cliOpts.logDir),
     statsDir: join(resolveLogDir(cliOpts.logDir), 'stats'),
     statsFlushInterval: parseInt(process.env.STATS_FLUSH_INTERVAL_MS || '60000', 10),
