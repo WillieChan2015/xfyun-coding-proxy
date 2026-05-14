@@ -1,9 +1,10 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { config, DEFAULT_MODEL } from '../config';
-import { upstreamRequest, cleanXfyunFields } from '../upstream';
+import { upstreamRequest, cleanXfyunFields, summarizeRequestDiagnostics } from '../upstream';
+import { formatAnthropicError } from '../errors';
 import { ANTHROPIC_SSE_EVENTS } from './types';
 import type { AnthropicUsage } from './types';
-import type { UpstreamResult } from '../upstream';
+import type { UpstreamResult, RequestDiagnostics } from '../upstream';
 
 /**
  * 从 Anthropic 响应中提取 token 用量
@@ -81,6 +82,12 @@ export async function handleAnthropicMessages(
     `anthropic request | ${request.url} | stream=${isStream} | model=${model} | ua=${ua}`,
   );
 
+  let diag: RequestDiagnostics | undefined;
+  if (config.verbose) {
+    diag = summarizeRequestDiagnostics(body, model, isStream);
+    request.log.debug(`request diagnostics | ${JSON.stringify(diag)}`);
+  }
+
   // ---- 构建上游请求 ----
   const upstreamUrl = `${config.anthropicBaseUrl.replace(/\/$/, '')}/v1/messages`;
 
@@ -126,41 +133,7 @@ export async function handleAnthropicMessages(
     cleanNonStreamBody: (responseBody: Record<string, unknown>) => {
       const cleanedBody = cleanXfyunFields(JSON.stringify(responseBody));
       return JSON.parse(cleanedBody) as Record<string, unknown>;
-    },
-    formatNetworkError: (errMsg: string) => ({
-      status: 502,
-      body: {
-        type: 'error',
-        error: {
-          type: 'api_error',
-          message: `upstream request failed: ${errMsg}`,
-        },
-      },
-    }),
-    formatUpstreamError: (status: number, responseBodyText: string) => ({
-      status,
-      body: responseBodyText,
-    }),
-    formatEmptyBodyError: (status: number) => ({
-      status,
-      body: {
-        type: 'error',
-        error: {
-          type: 'api_error',
-          message: `upstream returned ${status} with empty body`,
-        },
-      },
-    }),
-    formatNoStreamBodyError: (status: number) => ({
-      status,
-      body: {
-        type: 'error',
-        error: {
-          type: 'api_error',
-          message: `upstream returned ${status} with no stream body`,
-        },
-      },
-    }),
+},
     formatStreamErrorEvent: (errMsg: string) =>
       `event: error\ndata: ${JSON.stringify({
         type: 'error',
@@ -171,17 +144,12 @@ export async function handleAnthropicMessages(
       })}\n\n`,
     request: { id: request.id, url: request.url, headers: request.headers, log: request.log },
     rawReply: { write: (data) => reply.raw.write(data), end: () => reply.raw.end() },
+    diagnostics: diag,
   });
 
   // Handle result based on errorType
   if (result.errorType === 'network') {
-    reply.status(502).send({
-      type: 'error',
-      error: {
-        type: 'api_error',
-        message: `upstream request failed: ${result.error}`,
-      },
-    });
+    reply.status(502).send(formatAnthropicError('api_error', `upstream request failed: ${result.error}`));
     return;
   }
 
@@ -192,24 +160,12 @@ export async function handleAnthropicMessages(
 
   if (result.errorType === 'empty_body') {
     const status = result.status === 502 ? 500 : result.status;
-    reply.status(status).send({
-      type: 'error',
-      error: {
-        type: 'api_error',
-        message: `upstream returned ${result.status} with empty body`,
-      },
-    });
+    reply.status(status).send(formatAnthropicError('api_error', `upstream returned ${result.status} with empty body`));
     return;
   }
 
   if (result.errorType === 'no_stream_body') {
-    reply.status(result.status).send({
-      type: 'error',
-      error: {
-        type: 'api_error',
-        message: `upstream returned ${result.status} with no stream body`,
-      },
-    });
+    reply.status(result.status).send(formatAnthropicError('api_error', `upstream returned ${result.status} with no stream body`));
     return;
   }
 

@@ -127,6 +127,36 @@ export function summarizeContentTypes(body: Record<string, unknown> | undefined)
   return parts.length > 0 ? `${messages.length} msgs: ${parts.join(', ')}` : `${messages.length} msgs`;
 }
 
+export interface RequestDiagnostics {
+  model: string;
+  stream: boolean;
+  messageCount: number;
+  contentTypes: string;
+  maxTokens: number | null;
+  toolCount: number;
+  requestBytes: number;
+}
+
+export function summarizeRequestDiagnostics(
+  body: Record<string, unknown> | undefined,
+  model: string,
+  isStream: boolean,
+): RequestDiagnostics {
+  if (!body) {
+    return { model, stream: isStream, messageCount: 0, contentTypes: 'no body', maxTokens: null, toolCount: 0, requestBytes: 0 };
+  }
+
+  const messages = body.messages as Array<Record<string, unknown>> | undefined;
+  const messageCount = Array.isArray(messages) ? messages.length : 0;
+  const contentTypes = summarizeContentTypes(body);
+  const maxTokens = typeof body.max_tokens === 'number' ? body.max_tokens : null;
+  const tools = body.tools as Array<unknown> | undefined;
+  const toolCount = Array.isArray(tools) ? tools.length : 0;
+  const requestBytes = JSON.stringify(body).length;
+
+  return { model, stream: isStream, messageCount, contentTypes, maxTokens, toolCount, requestBytes };
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -421,13 +451,10 @@ export interface UpstreamOptions {
   extractNonStreamUsage?: (body: Record<string, unknown>) => { promptTokens?: number; completionTokens?: number };
   cleanNonStreamBody?: (body: Record<string, unknown>) => Record<string, unknown>;
   cleanStreamChunk?: (chunk: string) => string;
-  formatNetworkError: (errMsg: string) => { status: number; body: unknown };
-  formatUpstreamError: (status: number, body: string) => { status: number; body: unknown };
-  formatEmptyBodyError: (status: number) => { status: number; body: unknown };
-  formatNoStreamBodyError: (status: number) => { status: number; body: unknown };
   formatStreamErrorEvent: (errMsg: string) => string;
   request: { id: string; url: string; headers: Record<string, string | string[] | undefined>; log: FastifyInstance['log'] };
   rawReply: { write: (data: string | Buffer) => boolean; end: () => void };
+  diagnostics?: RequestDiagnostics;
 }
 
 export interface UpstreamResult {
@@ -477,6 +504,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
     formatStreamErrorEvent,
     request: reqInfo,
     rawReply,
+    diagnostics,
   } = options;
 
   rolloverDailyStats(config.logDir);
@@ -517,7 +545,8 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
   } catch (err) {
     // fetchWithRetry 网络异常（超时、DNS 失败等）
     const errMsg = err instanceof Error ? err.message : String(err);
-    reqInfo.log.error(`upstream fetch error | ${Date.now() - startTime}ms | ${errMsg}`);
+    const diagStr = diagnostics ? ` | diag=${JSON.stringify(diagnostics)}` : '';
+    reqInfo.log.error(`upstream fetch error | ${Date.now() - startTime}ms | ${errMsg}${diagStr}`);
 
     const durationMs = Date.now() - startTime;
     recordRequestComplete({
@@ -557,8 +586,9 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
   if (!response.ok && !isStream && responseBodyText) {
     const xfyunErr = extractXfyunError(responseBodyText);
     const errDetail = xfyunErr ? ` | xfyun_code=${xfyunErr.code} msg=${xfyunErr.msg} sid=${xfyunErr.sid ?? 'n/a'}` : '';
+    const diagStr = diagnostics ? ` | diag=${JSON.stringify(diagnostics)}` : '';
     reqInfo.log.error(
-      `upstream error | ${response.status} | ${durationMs}ms | retries=${retries}${errDetail} | body=${responseBodyText.slice(0, 300)}`,
+      `upstream error | ${response.status} | ${durationMs}ms | retries=${retries}${errDetail}${diagStr} | body=${responseBodyText.slice(0, 300)}`,
     );
 
     recordRequestComplete({
@@ -592,8 +622,9 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
 
   // 非流式请求上游错误但 body 为空（不应发生，防御性处理）
   if (!response.ok && !isStream && !responseBodyText) {
+    const diagStr = diagnostics ? ` | diag=${JSON.stringify(diagnostics)}` : '';
     reqInfo.log.error(
-      `upstream error with empty body | ${response.status} | ${durationMs}ms | retries=${retries}`,
+      `upstream error with empty body | ${response.status} | ${durationMs}ms | retries=${retries}${diagStr}`,
     );
 
     recordRequestComplete({
@@ -627,8 +658,9 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
 
   // 流式请求上游返回非 2xx 且无 body（无法建立 SSE 流）
   if (isStream && !response.ok && !response.body) {
+    const diagStr = diagnostics ? ` | diag=${JSON.stringify(diagnostics)}` : '';
     reqInfo.log.error(
-      `stream upstream error with no body | ${response.status} | ${durationMs}ms | retries=${retries}`,
+      `stream upstream error with no body | ${response.status} | ${durationMs}ms | retries=${retries}${diagStr}`,
     );
 
     recordRequestComplete({
@@ -715,7 +747,8 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       streamError = errMsg;
-      reqInfo.log.error(`stream error | ${durationMs}ms | ${errMsg}`);
+      const diagStr = diagnostics ? ` | diag=${JSON.stringify(diagnostics)}` : '';
+      reqInfo.log.error(`stream error | ${durationMs}ms | ${errMsg}${diagStr}`);
 
       // 向 SSE 流发送错误事件，让客户端知道流异常终止
       rawReply.write(formatStreamErrorEvent(errMsg));
@@ -728,7 +761,8 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
     requestFinished();
 
     if (streamError) {
-      reqInfo.log.error(`stream aborted | ${durationMs}ms | ${streamError}`);
+      const diagStr = diagnostics ? ` | diag=${JSON.stringify(diagnostics)}` : '';
+      reqInfo.log.error(`stream aborted | ${durationMs}ms | ${streamError}${diagStr}`);
       recordRequestComplete({
         protocol,
         model,
@@ -791,8 +825,9 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
 
   // 非流式请求的正常响应：解析 JSON，清理讯飞特有字段后返回
   if (!responseBodyText) {
+    const diagStr = diagnostics ? ` | diag=${JSON.stringify(diagnostics)}` : '';
     reqInfo.log.error(
-      `non-stream response with null body | ${response.status} | ${durationMs}ms | retries=${retries}`,
+      `non-stream response with null body | ${response.status} | ${durationMs}ms | retries=${retries}${diagStr}`,
     );
 
     recordRequestComplete({

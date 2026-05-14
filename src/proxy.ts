@@ -1,4 +1,5 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
+import { formatOpenAIError } from './errors';
 import { config, DEFAULT_MODEL } from './config';
 import { recordRequestComplete, requestStarted, requestFinished, Protocol } from './stats';
 import {
@@ -6,8 +7,10 @@ import {
   extractStreamUsage,
   buildUpstreamUrl,
   summarizeContentTypes,
+  summarizeRequestDiagnostics,
 } from './upstream';
 import type { UpstreamResult } from './upstream';
+import type { RequestDiagnostics } from './upstream';
 
 // Re-exports from upstream.ts for backward compatibility with existing test imports
 export {
@@ -56,6 +59,12 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
   request.log.info(
     `request incoming | ${request.url} | stream=${isStream} | ${summarizeContentTypes(body)} | ua=${ua}`,
   );
+
+  let diag: RequestDiagnostics | undefined;
+  if (config.verbose) {
+    diag = summarizeRequestDiagnostics(body, model, isStream);
+    request.log.debug(`request diagnostics | ${JSON.stringify(diag)}`);
+  }
 
   // ---- 构建上游请求 ----
   const upstreamUrl = buildUpstreamUrl(request.url);
@@ -117,40 +126,6 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
       }
       return responseBody;
     },
-    formatNetworkError: (errMsg: string) => ({
-      status: 502,
-      body: {
-        error: {
-          message: `upstream request failed: ${errMsg}`,
-          type: 'upstream_error',
-          code: 502,
-        },
-      },
-    }),
-    formatUpstreamError: (status: number, responseBodyText: string) => ({
-      status,
-      body: responseBodyText,
-    }),
-    formatEmptyBodyError: (status: number) => ({
-      status,
-      body: {
-        error: {
-          message: `upstream returned ${status} with empty body`,
-          type: 'upstream_error',
-          code: status,
-        },
-      },
-    }),
-    formatNoStreamBodyError: (status: number) => ({
-      status,
-      body: {
-        error: {
-          message: `upstream returned ${status} with no stream body`,
-          type: 'upstream_error',
-          code: status,
-        },
-      },
-    }),
     formatStreamErrorEvent: (errMsg: string) =>
       `data: ${JSON.stringify({
         error: {
@@ -161,21 +136,12 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
       })}\n\ndata: [DONE]\n\n`,
     request: { id: request.id, url: request.url, headers: request.headers, log: request.log },
     rawReply: { write: (data) => reply.raw.write(data), end: () => reply.raw.end() },
+    diagnostics: diag,
   });
 
   // Handle result based on errorType
   if (result.errorType === 'network') {
-    const formatted = {
-      status: 502,
-      body: {
-        error: {
-          message: `upstream request failed: ${result.error}`,
-          type: 'upstream_error',
-          code: 502,
-        },
-      },
-    };
-    reply.status(formatted.status).send(formatted.body);
+    reply.status(502).send(formatOpenAIError(502, `upstream request failed: ${result.error}`));
     return;
   }
 
@@ -185,24 +151,12 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
   }
 
   if (result.errorType === 'empty_body') {
-    reply.status(result.status).send({
-      error: {
-        message: `upstream returned ${result.status} with empty body`,
-        type: 'upstream_error',
-        code: result.status,
-      },
-    });
+    reply.status(result.status).send(formatOpenAIError(result.status, `upstream returned ${result.status} with empty body`));
     return;
   }
 
   if (result.errorType === 'no_stream_body') {
-    reply.status(result.status).send({
-      error: {
-        message: `upstream returned ${result.status} with no stream body`,
-        type: 'upstream_error',
-        code: result.status,
-      },
-    });
+    reply.status(result.status).send(formatOpenAIError(result.status, `upstream returned ${result.status} with no stream body`));
     return;
   }
 
