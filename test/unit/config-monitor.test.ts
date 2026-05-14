@@ -2,17 +2,25 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { loadConfig } from '../../src/config';
 
 describe('config monitor option', () => {
-  const originalEnv = process.env.MONITOR;
+  const originalMonitor = process.env.MONITOR;
+  const originalApiKey = process.env.XFYUN_API_KEY;
 
   beforeEach(() => {
     delete process.env.MONITOR;
+    // CI 环境无 .env 文件，需提供 apiKey 以通过 zod 校验
+    if (!process.env.XFYUN_API_KEY) process.env.XFYUN_API_KEY = 'test-key';
   });
 
   afterEach(() => {
-    if (originalEnv !== undefined) {
-      process.env.MONITOR = originalEnv;
+    if (originalMonitor !== undefined) {
+      process.env.MONITOR = originalMonitor;
     } else {
       delete process.env.MONITOR;
+    }
+    if (originalApiKey !== undefined) {
+      process.env.XFYUN_API_KEY = originalApiKey;
+    } else {
+      delete process.env.XFYUN_API_KEY;
     }
   });
 
