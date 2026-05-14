@@ -161,6 +161,12 @@ export function MonitorApp({ name, version, onQuit }: AppProps) {
   }, []);
 
   useInput((input, key) => {
+    // Ctrl+C：直接触发 gracefulShutdown，无需按两次
+    if (input === 'c' && key.ctrl) {
+      onQuit();
+      exit();
+      return;
+    }
     if (input === 'q') {
       onQuit();
       exit();

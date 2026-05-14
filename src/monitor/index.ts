@@ -9,6 +9,8 @@ import { MonitorApp } from './app';
 export function startMonitor(name: string, version: string, onQuit: () => void): { unmount: () => void } {
   let unmounted = false;
 
+  // exitOnCtrlC: false — 禁用 Ink 默认拦截 Ctrl+C，
+  // 改由 MonitorApp 的 useInput 自行处理，确保 Ctrl+C 直接触发 gracefulShutdown
   const handle = render(
     React.createElement(MonitorApp, {
       name,
@@ -21,6 +23,7 @@ export function startMonitor(name: string, version: string, onQuit: () => void):
         }
       },
     }),
+    { exitOnCtrlC: false },
   );
 
   return { unmount: () => {

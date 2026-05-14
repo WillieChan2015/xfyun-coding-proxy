@@ -9,7 +9,7 @@ import {
   extractXfyunError,
   buildUpstreamUrl,
   extractStreamUsage,
-} from '../proxy';
+} from '../upstream';
 import { extractTokenUsage, fmtTokens } from '../util';
 import { rolloverDailyStats, recordRequestComplete, recordRequestStart, requestStarted, requestFinished, streamingStarted, streamingFinished } from '../stats';
 import { convertChatRequest, convertGenerateRequest } from './request';

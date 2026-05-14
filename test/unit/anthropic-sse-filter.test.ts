@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'bun:test';
-import { SSEFilter } from '../../src/proxy';
+import { SSEFilter } from '../../src/upstream';
 import { ANTHROPIC_SSE_EVENTS } from '../../src/anthropic/types';
 
 const mockLog = { debug: vi.fn() } as any;

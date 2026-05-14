@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { cleanXfyunFields } from '../../src/proxy';
+import { cleanXfyunFields } from '../../src/upstream';
 
 describe('cleanXfyunFields', () => {
   it('removes trailing reasoning_content', () => {

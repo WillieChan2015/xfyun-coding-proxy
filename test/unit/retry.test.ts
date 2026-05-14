@@ -5,7 +5,7 @@ import {
   buildUpstreamUrl,
   RETRYABLE_STATUS_CODES,
   RETRYABLE_XFYUN_CODES,
-} from '../../src/proxy';
+} from '../../src/upstream';
 
 describe('isRetryableXfyunError', () => {
   it('detects code 10012 without space', () => {

@@ -100,9 +100,11 @@ export async function readWithTimeout(
   return Promise.race([readPromise, timeoutPromise]);
 }
 
+/**
+ * 格式化 token 数量为可读字符串
+ */
 export function fmtTokens(n: number): string {
-  if (n >= 10000) {
-    return `${(n / 1000).toFixed(1)}k(${n.toLocaleString()})`;
-  }
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M(${n.toLocaleString()})`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k(${n.toLocaleString()})`;
   return String(n);
 }

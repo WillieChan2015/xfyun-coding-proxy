@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'bun:test';
-import { filterSSEEvents, SSEFilter, ALLOWED_SSE_EVENTS } from '../../src/proxy';
+import { filterSSEEvents, SSEFilter, ALLOWED_SSE_EVENTS } from '../../src/upstream';
 
 const mockLog = { debug: vi.fn() } as any;
 
