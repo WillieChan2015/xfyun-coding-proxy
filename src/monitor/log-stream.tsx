@@ -53,10 +53,10 @@ export function LogStream({ entries, errorCount, maxVisible = 8, scrollOffset, t
       </Box>
       {hasMoreAbove && <Text dimColor>  ↑ ↑ ↑ {start} more above</Text>}
       {visible.map((entry, i) => {
-        const tag = entry.pending ? '...' : entry.success ? entry.method : 'ERR';
+        const tag = entry.success ? entry.method : 'ERR';
         const head = `${entry.time} ${entry.requestId ?? '-'} ${tag} ${entry.path} - ${entry.model} | stream=${entry.stream ?? '?'}`;
         const tail = entry.pending
-          ? `| ua=${entry.ua ?? 'unknown'} | processing ${((Date.now() - entry.timestamp) / 1000).toFixed(1)}s`
+          ? `| ua=${entry.ua ?? 'unknown'} | processing... ${((Date.now() - entry.timestamp) / 1000).toFixed(1)}s`
           : entry.success
             ? `| ${(entry.latencyMs / 1000).toFixed(1)}s | in=${fmtTokens(entry.inputTokens)} out=${fmtTokens(entry.outputTokens)} total=${fmtTokens(entry.inputTokens + entry.outputTokens)} | ua=${entry.ua ?? 'unknown'}`
             : `| ${entry.latencyMs}ms | ${entry.error ?? 'unknown error'} | ua=${entry.ua ?? 'unknown'}`;
