@@ -16,6 +16,56 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed / 修复
 
+## [0.0.6-beta.1] - 2026-05-14
+
+### Added / 新增
+
+- 新增 Ink 实时监控面板，启动时自动显示（默认开启），展示请求速率、成功率、token 用量、并发/延迟统计和请求日志流，支持键盘交互（q 退出、↑↓ 滚动、←→ 翻页、e 切换错误日志、r 重置每日统计）。
+- Added Ink real-time monitor dashboard (enabled by default on startup), showing request rate, success rate, token usage, concurrent/streaming counts, latency stats, and request log stream, with keyboard interaction (q quit, ↑↓ scroll, ←→ page, e toggle error logs, r reset daily stats).
+- 新增 `--no-monitor` CLI 选项和 `MONITOR` 环境变量，支持禁用实时监控面板。
+- Added `--no-monitor` CLI flag and `MONITOR` environment variable to disable the real-time monitor dashboard.
+- 新增 `STREAM_READ_TIMEOUT_MS` 环境变量，配置流式 SSE 单次 read 超时（默认 60s），防止上游停止发送数据时 `reader.read()` 无限挂起。
+- Added `STREAM_READ_TIMEOUT_MS` environment variable for configuring per-read timeout on streaming SSE (default 60s), preventing `reader.read()` from hanging indefinitely when upstream stalls.
+- 新增 `readWithTimeout()` 工具函数，为 `ReadableStreamDefaultReader.read()` 添加超时保护。
+- Added `readWithTimeout()` utility function that adds timeout protection to `ReadableStreamDefaultReader.read()`.
+- 新增 `statsEmitter` 事件系统（`request:start` / `request:complete`），替代各 handler 中分散的统计更新调用，实现集中式事件驱动记录。
+- Added `statsEmitter` event system (`request:start` / `request:complete`) replacing scattered stats updates across handlers with centralized event-driven recording.
+- 新增并发/流式请求追踪（`requestStarted` / `requestFinished` / `streamingStarted` / `streamingFinished`），供监控面板实时展示活跃请求数。
+- Added concurrent/streaming request tracking (`requestStarted` / `requestFinished` / `streamingStarted` / `streamingFinished`) for real-time active request count display on the monitor panel.
+- 新增延迟滑动窗口统计（`getLatencyStats`），计算最近 1000 次请求的平均延迟和 P95 延迟。
+- Added sliding-window latency stats (`getLatencyStats`) computing average and P95 latency over the last 1000 requests.
+- 新增请求日志环形缓冲区（`getRequestLog`），保留最近 100 条请求记录（含 pending 状态），供监控面板实时展示。
+- Added ring-buffer request log (`getRequestLog`) retaining the last 100 request records (including pending entries) for real-time display on the monitor panel.
+- 新增 `resetDailyStats()` 函数，支持监控面板按 `r` 键重置当日统计。
+- Added `resetDailyStats()` function enabling the monitor panel to reset daily stats via the `r` key.
+- 新增 `RequestDiagnostics` 接口和 `summarizeRequestDiagnostics()` 函数，提取请求的诊断信息（模型、流状态、消息数量、content 类型、工具数量、请求大小）。
+- Added `RequestDiagnostics` interface and `summarizeRequestDiagnostics()` function extracting request diagnostic info (model, stream state, message count, content types, tool count, request size).
+- 新增 `src/errors.ts`，定义 `UpstreamError`、`StreamInterruptedError`、`NetworkError` 错误类和 `formatOpenAIError` / `formatAnthropicError` 格式化函数，统一各协议错误响应格式。
+- Added `src/errors.ts` defining `UpstreamError`, `StreamInterruptedError`, `NetworkError` error classes and `formatOpenAIError` / `formatAnthropicError` formatting functions for unified protocol-specific error responses.
+- 新增 `src/types/openai.ts`，定义 OpenAI 聊天完成请求/响应类型（`ChatCompletionRequest`、`ChatCompletionResponse`、`ChatCompletionChunk` 等）及类型保护函数。
+- Added `src/types/openai.ts` defining OpenAI chat completion request/response types (`ChatCompletionRequest`, `ChatCompletionResponse`, `ChatCompletionChunk`, etc.) and type guard functions.
+- 新增配置 Schema 校验（基于 `zod`），启动时自动验证配置项格式和范围，替代原有的手动 `validateConfig()`。
+- Added config schema validation (via `zod`) that automatically validates config field formats and ranges on startup, replacing the manual `validateConfig()` function.
+
+### Changed / 变更
+
+- 将 `src/proxy.ts` 中的共享上游逻辑（重试、SSE 过滤、讯飞字段清理、请求构建）提取到 `src/upstream.ts`，三个协议 handler 统一通过 `upstreamRequest()` 发起上游请求。
+- Extracted shared upstream logic (retry, SSE filtering, iFlytek field cleanup, request building) from `src/proxy.ts` into `src/upstream.ts`; all three protocol handlers now use `upstreamRequest()` to make upstream requests.
+- `src/proxy.ts` 从 400+ 行精简为路由分发 + 错误格式化，核心请求处理逻辑迁移至 `src/upstream.ts`。
+- Simplified `src/proxy.ts` from 400+ lines to route dispatch + error formatting; core request handling logic moved to `src/upstream.ts`.
+- `fmtTokens()` 支持百万级数字格式化（`1.2M`），括号内原始值使用千分位分隔符。
+- `fmtTokens()` now supports million-scale formatting (`1.2M`) with thousands-separated raw values in parentheses.
+- Session Summary 按协议维度逐行展示请求数、token 消耗和错误数，替代原有的单行汇总格式。
+- Session Summary now displays per-protocol request count, token usage, and errors line by line, replacing the previous single-line summary format.
+- Ink 监控模式下移除 pino console transport（仅保留文件 transport），避免终端输出破坏 Ink TUI 渲染。
+- Removed pino console transport in Ink monitor mode (keeping only file transport) to prevent terminal output from corrupting Ink TUI rendering.
+- 错误处理器增加兜底逻辑：handler 中未调用 `recordRequestComplete` 时（如未捕获异常或 body 解析失败），由全局错误处理器补调，确保统计和日志状态正确更新。
+- Added fallback logic in the error handler: when handlers fail to call `recordRequestComplete` (e.g. uncaught exceptions or body parse failures), the global error handler compensates to ensure stats and log state are correctly updated.
+- 启动日志从 `maas-coding-proxy vX.Y.Z` 改为使用 `package.json` 中的 `name` 字段动态显示。
+- Startup log now dynamically displays the `name` field from `package.json` instead of hardcoded `maas-coding-proxy`.
+
+### Fixed / 修复
+
 ## [0.0.5-beta.8] - 2026-05-12
 
 ### Added / 新增
