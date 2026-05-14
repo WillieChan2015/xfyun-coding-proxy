@@ -16,6 +16,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed / 修复
 
+## [0.0.6-beta.2] - 2026-05-14
+
+### Added / 新增
+
+### Changed / 变更
+
+### Fixed / 修复
+
+- 修复发布产物中监控面板的加载路径与旧 CJS 产物残留问题，Node 启动现已正确加载 `dist/monitor.mjs`，构建前也会清理旧的 `dist/monitor/*` 文件。
+- Fixed the monitor dashboard loading path and stale CJS artifact issue in the published build; Node startup now loads `dist/monitor.mjs` correctly, and the build clears old `dist/monitor/*` files first.
+
 ## [0.0.6-beta.1] - 2026-05-14
 
 ### Added / 新增
