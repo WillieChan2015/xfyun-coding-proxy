@@ -29,7 +29,7 @@
   "scripts": {
     "start": "bun src/index.ts",
     "dev": "bun --watch src/index.ts",
-    "build": "tsc && cp src/pretty-roll-transport.js dist/",
+    "build": "tsc && bun build src/monitor/entry.ts --outfile dist/monitor.js --target=node --format=esm --packages=external && cp src/pretty-roll-transport.js dist/",
     "prepack": "chmod +x dist/index.js",
     "prepublishOnly": "pnpm release:check && pnpm test && pnpm build",
     "release:auto": "node .github/scripts/release-auto.mjs",

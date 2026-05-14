@@ -8,7 +8,6 @@ import { handleAnthropicMessages } from './anthropic/handler';
 import { estimateInputTokens } from './util';
 import { printSessionSummary, initDailyStats, saveDailyStats, rolloverDailyStats, dailyStats, recordRequestComplete, requestFinished, getRequestLog } from './stats';
 import { checkForUpdate } from './update-check.js';
-import { startMonitor } from './monitor';
 
 // 读取当前包版本，用于启动时更新检查
 const { name, version } = require('../package.json');
@@ -335,9 +334,13 @@ export async function startServer(server: FastifyInstance, cfg: ResolvedConfig):
 
   let monitorHandle: { unmount: () => void } | null = null;
   if (cfg.monitor) {
-    monitorHandle = startMonitor(name, version, () => {
+    // 动态加载 monitor ESM bundle，避免 CJS require 触发 ink 的 top-level await
+    // 使用 Function('return import') 确保 tsc (module: commonjs) 不会将 import() 编译为 require()
+    const dynamicImport = new Function('modulePath', 'return import(modulePath)') as (path: string) => Promise<any>;
+    const { startMonitor } = await dynamicImport('./monitor/index.js');
+    startMonitor(name, version, () => {
       gracefulShutdown().catch(() => process.exit(1));
-    });
+    }).then((handle: { unmount: () => void }) => { monitorHandle = handle; });
   }
 
   // 优雅关停：收到 SIGINT/SIGTERM 后等待进行中的请求结束再退出
