@@ -334,13 +334,14 @@ export async function startServer(server: FastifyInstance, cfg: ResolvedConfig):
 
   let monitorHandle: { unmount: () => void } | null = null;
   if (cfg.monitor) {
-    // 动态加载 monitor ESM bundle，避免 CJS require 触发 ink 的 top-level await
-    // 使用 Function('return import') 确保 tsc (module: commonjs) 不会将 import() 编译为 require()
+    // Node 发布态加载 bun 产出的 monitor ESM bundle；Bun 源码运行时则直接加载 TS 入口。
+    // 使用 Function('return import') 确保 tsc (module: commonjs) 不会将 import() 编译为 require()。
     const dynamicImport = new Function('modulePath', 'return import(modulePath)') as (path: string) => Promise<any>;
-    const { startMonitor } = await dynamicImport('./monitor/index.js');
-    startMonitor(name, version, () => {
+    const monitorModulePath = process.versions.bun ? './monitor/entry.ts' : './monitor.mjs';
+    const { startMonitor } = await dynamicImport(monitorModulePath);
+    monitorHandle = await startMonitor(name, version, () => {
       gracefulShutdown().catch(() => process.exit(1));
-    }).then((handle: { unmount: () => void }) => { monitorHandle = handle; });
+    });
   }
 
   // 优雅关停：收到 SIGINT/SIGTERM 后等待进行中的请求结束再退出
