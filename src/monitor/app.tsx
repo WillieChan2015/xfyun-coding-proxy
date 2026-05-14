@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Box, useApp, useInput } from 'ink';
 import { Header } from './header';
 import { TokenPanel } from './token-panel';
 import { RequestPanel } from './request-panel';
-import { LogStream, LogEntry } from './log-stream';
+import { LogStream, LogEntry, LogTab } from './log-stream';
 import { Footer } from './footer';
 import {
   statsEmitter,
@@ -26,6 +26,9 @@ interface MonitorState {
   active: number;
   streaming: number;
   totalToday: number;
+  todayErrors: number;
+  totalSession: number;
+  sessionErrors: number;
   avgLatencyMs: number;
   p95LatencyMs: number;
   logEntries: LogEntry[];
@@ -78,9 +81,11 @@ function toLogEntries(): LogEntry[] {
     inputTokens: entry.inputTokens,
     outputTokens: entry.outputTokens,
     success: entry.success,
+    stream: entry.stream,
     pending: entry.pending,
     requestId: entry.requestId,
     ua: entry.ua,
+    error: entry.error,
   }));
 }
 
@@ -93,24 +98,43 @@ interface AppProps {
 export function MonitorApp({ name, version, onQuit }: AppProps) {
   const { exit } = useApp();
 
-  const [state, setState] = useState<MonitorState>({
-    requestsPerMin: 0,
-    successRate: 100,
-    tokenInput: 0,
-    tokenOutput: 0,
-    byProtocol: [],
-    active: 0,
-    streaming: 0,
-    totalToday: 0,
-    avgLatencyMs: 0,
-    p95LatencyMs: 0,
-    logEntries: [],
-  });
+  const [state, setState] = useState<MonitorState>(() => ({
+    requestsPerMin: getRequestsPerMin(),
+    successRate: calcSuccessRate(),
+    tokenInput: sessionStats.totalPromptTokens,
+    tokenOutput: sessionStats.totalCompletionTokens,
+    byProtocol: getProtocolUsage(),
+    active: getActiveRequests(),
+    streaming: getStreamingRequests(),
+    totalToday: dailyStats.requestCount,
+    todayErrors: dailyStats.errors,
+    totalSession: sessionStats.requestCount,
+    sessionErrors: sessionStats.errors,
+    avgLatencyMs: getLatencyStats().avg,
+    p95LatencyMs: getLatencyStats().p95,
+    logEntries: toLogEntries(),
+  }));
 
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [logTab, setLogTab] = useState<LogTab>('all');
+  const lastScrollTime = useRef(0);
+
+  // 当前 tab 过滤后的条目数，用于滚动边界计算
+  const filteredCount = logTab === 'errors'
+    ? state.logEntries.filter(e => !e.success).length
+    : state.logEntries.length;
+
+  // 若处于滚动中且 5s 无操作，自动回到底部
+  const autoScrollReset = useCallback(() => {
+    setScrollOffset(prev => {
+      if (prev > 0 && Date.now() - lastScrollTime.current > 5000) return 0;
+      return prev;
+    });
+  }, []);
 
   // 刷新全部状态
   const refreshState = useCallback(() => {
+    autoScrollReset();
     const latency = getLatencyStats();
     setState(prev => ({
       ...prev,
@@ -122,6 +146,9 @@ export function MonitorApp({ name, version, onQuit }: AppProps) {
       active: getActiveRequests(),
       streaming: getStreamingRequests(),
       totalToday: dailyStats.requestCount,
+      todayErrors: dailyStats.errors,
+      totalSession: sessionStats.requestCount,
+      sessionErrors: sessionStats.errors,
       avgLatencyMs: latency.avg,
       p95LatencyMs: latency.p95,
       logEntries: toLogEntries(),
@@ -172,10 +199,26 @@ export function MonitorApp({ name, version, onQuit }: AppProps) {
       exit();
     }
     if (key.upArrow) {
-      setScrollOffset(prev => Math.min(prev + 1, state.logEntries.length - 8));
+      lastScrollTime.current = Date.now();
+      setScrollOffset(prev => Math.min(prev + 1, Math.max(0, filteredCount - 8)));
     }
     if (key.downArrow) {
+      lastScrollTime.current = Date.now();
       setScrollOffset(prev => Math.max(prev - 1, 0));
+    }
+    // 左键：向上翻一页（8行），右键：向下翻一页
+    if (key.leftArrow) {
+      lastScrollTime.current = Date.now();
+      setScrollOffset(prev => Math.min(prev + 8, Math.max(0, filteredCount - 8)));
+    }
+    if (key.rightArrow) {
+      lastScrollTime.current = Date.now();
+      setScrollOffset(prev => Math.max(prev - 8, 0));
+    }
+    // e 键：切换日志 tab（全部 / 错误）
+    if (input === 'e') {
+      setLogTab(prev => prev === 'all' ? 'errors' : 'all');
+      setScrollOffset(0);
     }
     if (input === 'r') {
       resetDailyStats();
@@ -195,15 +238,18 @@ export function MonitorApp({ name, version, onQuit }: AppProps) {
             active={state.active}
             streaming={state.streaming}
             totalToday={state.totalToday}
+            todayErrors={state.todayErrors}
+            totalSession={state.totalSession}
+            sessionErrors={state.sessionErrors}
             avgLatencyMs={state.avgLatencyMs}
             p95LatencyMs={state.p95LatencyMs}
           />
         </Box>
       </Box>
       <Box borderStyle="single" borderColor="gray" flexDirection="column" paddingX={1}>
-        <LogStream entries={state.logEntries} scrollOffset={scrollOffset} />
+        <LogStream entries={state.logEntries} errorCount={state.logEntries.filter(e => !e.success).length} scrollOffset={scrollOffset} tab={logTab} />
       </Box>
-      <Footer />
+      <Footer logTab={logTab} />
     </Box>
   );
 }

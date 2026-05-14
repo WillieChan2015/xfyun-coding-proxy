@@ -519,7 +519,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
   const reqId = reqInfo.id;
   const reqPath = reqInfo.url;
 
-  recordRequestStart(protocol, model, reqId, reqPath, ua);
+  recordRequestStart(protocol, model, reqId, reqPath, ua, isStream);
 
   // ---- 带重试地转发请求 ----
   let response: Awaited<ReturnType<typeof fetchWithRetry>>['response'];
@@ -556,6 +556,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       outputTokens: 0,
       latencyMs: durationMs,
       success: false,
+      stream: isStream,
       requestId: reqId,
       path: reqPath,
       ua,
@@ -598,6 +599,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       outputTokens: 0,
       latencyMs: durationMs,
       success: false,
+      stream: isStream,
       requestId: reqId,
       path: reqPath,
       ua,
@@ -634,6 +636,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       outputTokens: 0,
       latencyMs: durationMs,
       success: false,
+      stream: isStream,
       requestId: reqId,
       path: reqPath,
       ua,
@@ -670,6 +673,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       outputTokens: 0,
       latencyMs: durationMs,
       success: false,
+      stream: isStream,
       requestId: reqId,
       path: reqPath,
       ua,
@@ -770,6 +774,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
         outputTokens: outputTokens ?? 0,
         latencyMs: durationMs,
         success: false,
+        stream: isStream,
         requestId: reqId,
         path: reqPath,
         ua,
@@ -805,6 +810,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       outputTokens: outputTokens ?? 0,
       latencyMs: durationMs,
       success: true,
+      stream: isStream,
       requestId: reqId,
       path: reqPath,
       ua,
@@ -837,6 +843,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       outputTokens: 0,
       latencyMs: durationMs,
       success: false,
+      stream: isStream,
       requestId: reqId,
       path: reqPath,
       ua,
@@ -891,6 +898,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
     outputTokens: usageInfo.completionTokens ?? 0,
     latencyMs: durationMs,
     success: response.ok,
+    stream: isStream,
     requestId: reqId,
     path: reqPath,
     ua,

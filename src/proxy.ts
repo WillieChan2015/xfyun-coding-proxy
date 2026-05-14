@@ -212,6 +212,7 @@ export async function handleGetProxy(
     outputTokens: 0,
     latencyMs: 0,
     success: true,
+    stream: false,
     requestId: request.id,
     path: request.url,
     ua,

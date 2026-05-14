@@ -181,6 +181,7 @@ export interface RequestCompleteEvent {
   latencyMs: number;
   success: boolean;
   retries: number;
+  stream?: boolean;
   requestId?: string;
   path?: string;
   ua?: string;
@@ -248,6 +249,7 @@ export function recordRequestComplete(event: RequestCompleteEvent): void {
     inputTokens: event.inputTokens,
     outputTokens: event.outputTokens,
     success: event.success,
+    ...(event.stream !== undefined ? { stream: event.stream } : {}),
     ...(event.requestId ? { requestId: event.requestId } : {}),
     ...(event.ua ? { ua: event.ua } : {}),
     ...(event.error ? { error: event.error } : {}),
@@ -266,7 +268,7 @@ export function recordRequestComplete(event: RequestCompleteEvent): void {
 /**
  * 记录请求开始事件：推入 pending 日志条目 + 发射事件
  */
-export function recordRequestStart(protocol: Protocol, model: string, requestId?: string, path?: string, ua?: string): void {
+export function recordRequestStart(protocol: Protocol, model: string, requestId?: string, path?: string, ua?: string, stream?: boolean): void {
   const entry: RequestLogEntry = {
     timestamp: Date.now(),
     method: 'POST',
@@ -277,6 +279,7 @@ export function recordRequestStart(protocol: Protocol, model: string, requestId?
     inputTokens: 0,
     outputTokens: 0,
     success: true,
+    ...(stream !== undefined ? { stream } : {}),
     pending: true,
     ...(requestId ? { requestId } : {}),
     ...(ua ? { ua } : {}),
@@ -342,6 +345,7 @@ export interface RequestLogEntry {
   inputTokens: number;
   outputTokens: number;
   success: boolean;
+  stream?: boolean;
   pending?: boolean;
   requestId?: string;
   ua?: string;

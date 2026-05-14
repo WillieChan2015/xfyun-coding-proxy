@@ -163,7 +163,7 @@ async function handleOllamaProxy(
     `ollama ${endpoint} | stream=${isStream} | model=${rawBody.model ?? 'unknown'} | ua=${ua}`,
   );
 
-  recordRequestStart('ollama', String(rawBody.model ?? 'unknown'), request.id, request.url, ua);
+  recordRequestStart('ollama', String(rawBody.model ?? 'unknown'), request.id, request.url, ua, isStream);
 
   // ---- 步骤 2：构建上游请求 ----
   const upstreamUrl = buildUpstreamUrl('/v1/chat/completions');
@@ -206,6 +206,7 @@ async function handleOllamaProxy(
       outputTokens: 0,
       latencyMs: Date.now() - startTime,
       success: false,
+      stream: isStream,
       requestId: request.id,
       path: request.url,
       ua,
@@ -237,6 +238,7 @@ async function handleOllamaProxy(
       outputTokens: 0,
       latencyMs: durationMs,
       success: false,
+      stream: isStream,
       requestId: request.id,
       path: request.url,
       ua,
@@ -285,6 +287,7 @@ async function handleOllamaProxy(
         outputTokens: usageInfo.completionTokens ?? 0,
         latencyMs: durationMs,
         success: true,
+        stream: isStream,
         requestId: request.id,
         path: request.url,
         ua,
@@ -301,6 +304,7 @@ async function handleOllamaProxy(
         outputTokens: 0,
         latencyMs: durationMs,
         success: false,
+        stream: isStream,
         requestId: request.id,
         path: request.url,
         ua,
@@ -383,6 +387,7 @@ async function handleOllamaProxy(
         outputTokens: 0,
         latencyMs: durationMs,
         success: false,
+        stream: isStream,
         requestId: request.id,
         path: request.url,
         ua,
