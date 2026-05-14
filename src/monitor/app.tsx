@@ -5,17 +5,23 @@ import { TokenPanel } from './token-panel';
 import { RequestPanel } from './request-panel';
 import { LogStream, LogEntry, LogTab } from './log-stream';
 import { Footer } from './footer';
-import {
-  statsEmitter,
-  RequestCompleteEvent,
-  sessionStats,
-  dailyStats,
-  getActiveRequests,
-  getStreamingRequests,
-  getLatencyStats,
-  getRequestLog,
-  resetDailyStats,
-} from '../stats';
+import type { RequestCompleteEvent } from '../stats';
+
+/**
+ * 面板所需的 stats 依赖接口。
+ * 由调用方（server.ts）从主进程的 stats 模块注入，
+ * 避免 bun 打包时内联 stats.ts 导致 monitor.mjs 持有独立的状态副本。
+ */
+export interface StatsDeps {
+  statsEmitter: NodeJS.EventEmitter;
+  sessionStats: { requestCount: number; errors: number; totalPromptTokens: number; totalCompletionTokens: number; protocols: Record<string, { totalPromptTokens: number; totalCompletionTokens: number }> };
+  dailyStats: { requestCount: number; errors: number };
+  getActiveRequests: () => number;
+  getStreamingRequests: () => number;
+  getLatencyStats: () => { avg: number; p95: number };
+  getRequestLog: () => ReadonlyArray<{ timestamp: number; method: string; path: string; protocol: string; model: string; latencyMs: number; inputTokens: number; outputTokens: number; success: boolean; stream?: boolean; pending?: boolean; requestId?: string; ua?: string; error?: string }>;
+  resetDailyStats: () => void;
+}
 
 interface MonitorState {
   requestsPerMin: number;
@@ -47,14 +53,14 @@ function getRequestsPerMin(): number {
 }
 
 /** 从 sessionStats 计算成功率 */
-function calcSuccessRate(): number {
-  if (sessionStats.requestCount === 0) return 100;
-  return ((sessionStats.requestCount - sessionStats.errors) / sessionStats.requestCount) * 100;
+function calcSuccessRate(ss: StatsDeps['sessionStats']): number {
+  if (ss.requestCount === 0) return 100;
+  return ((ss.requestCount - ss.errors) / ss.requestCount) * 100;
 }
 
 /** 从 sessionStats.protocols 构建 byProtocol 数组 */
-function getProtocolUsage(): { name: string; tokens: number }[] {
-  return Object.entries(sessionStats.protocols).map(([name, p]) => ({
+function getProtocolUsage(ss: StatsDeps['sessionStats']): { name: string; tokens: number }[] {
+  return Object.entries(ss.protocols).map(([name, p]) => ({
     name,
     tokens: p.totalPromptTokens + p.totalCompletionTokens,
   }));
@@ -68,7 +74,7 @@ function formatLocalTime(ts: number): string {
 }
 
 /** 从 RequestLogEntry 转换为 LogEntry */
-function toLogEntries(): LogEntry[] {
+function toLogEntries(getRequestLog: StatsDeps['getRequestLog']): LogEntry[] {
   const log = getRequestLog();
   return log.map(entry => ({
     time: formatLocalTime(entry.timestamp),
@@ -93,17 +99,19 @@ interface AppProps {
   name: string;
   version: string;
   onQuit: () => void;
+  stats: StatsDeps;
 }
 
-export function MonitorApp({ name, version, onQuit }: AppProps) {
+export function MonitorApp({ name, version, onQuit, stats }: AppProps) {
+  const { statsEmitter, sessionStats, dailyStats, getActiveRequests, getStreamingRequests, getLatencyStats, getRequestLog, resetDailyStats } = stats;
   const { exit } = useApp();
 
   const [state, setState] = useState<MonitorState>(() => ({
     requestsPerMin: getRequestsPerMin(),
-    successRate: calcSuccessRate(),
+    successRate: calcSuccessRate(sessionStats),
     tokenInput: sessionStats.totalPromptTokens,
     tokenOutput: sessionStats.totalCompletionTokens,
-    byProtocol: getProtocolUsage(),
+    byProtocol: getProtocolUsage(sessionStats),
     active: getActiveRequests(),
     streaming: getStreamingRequests(),
     totalToday: dailyStats.requestCount,
@@ -112,7 +120,7 @@ export function MonitorApp({ name, version, onQuit }: AppProps) {
     sessionErrors: sessionStats.errors,
     avgLatencyMs: getLatencyStats().avg,
     p95LatencyMs: getLatencyStats().p95,
-    logEntries: toLogEntries(),
+    logEntries: toLogEntries(getRequestLog),
   }));
 
   const [scrollOffset, setScrollOffset] = useState(0);
@@ -139,10 +147,10 @@ export function MonitorApp({ name, version, onQuit }: AppProps) {
     setState(prev => ({
       ...prev,
       requestsPerMin: getRequestsPerMin(),
-      successRate: calcSuccessRate(),
+      successRate: calcSuccessRate(sessionStats),
       tokenInput: sessionStats.totalPromptTokens,
       tokenOutput: sessionStats.totalCompletionTokens,
-      byProtocol: getProtocolUsage(),
+      byProtocol: getProtocolUsage(sessionStats),
       active: getActiveRequests(),
       streaming: getStreamingRequests(),
       totalToday: dailyStats.requestCount,
@@ -151,7 +159,7 @@ export function MonitorApp({ name, version, onQuit }: AppProps) {
       sessionErrors: sessionStats.errors,
       avgLatencyMs: latency.avg,
       p95LatencyMs: latency.p95,
-      logEntries: toLogEntries(),
+      logEntries: toLogEntries(getRequestLog),
     }));
   }, []);
 
@@ -181,7 +189,7 @@ export function MonitorApp({ name, version, onQuit }: AppProps) {
         requestsPerMin: getRequestsPerMin(),
         active: getActiveRequests(),
         streaming: getStreamingRequests(),
-        logEntries: toLogEntries(),
+        logEntries: toLogEntries(getRequestLog),
       }));
     }, 1000);
     return () => clearInterval(interval);

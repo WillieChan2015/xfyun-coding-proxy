@@ -6,7 +6,7 @@ import { handleProxy, handleGetProxy } from './proxy';
 import { handleOllamaChat, handleOllamaGenerate } from './ollama/handler';
 import { handleAnthropicMessages } from './anthropic/handler';
 import { estimateInputTokens } from './util';
-import { printSessionSummary, initDailyStats, saveDailyStats, rolloverDailyStats, dailyStats, recordRequestComplete, requestFinished, getRequestLog } from './stats';
+import { printSessionSummary, initDailyStats, saveDailyStats, rolloverDailyStats, dailyStats, recordRequestComplete, requestFinished, getRequestLog, statsEmitter, sessionStats, getActiveRequests, getStreamingRequests, getLatencyStats, resetDailyStats } from './stats';
 import { checkForUpdate } from './update-check.js';
 
 // 读取当前包版本，用于启动时更新检查
@@ -302,18 +302,25 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
 export async function startServer(server: FastifyInstance, cfg: ResolvedConfig): Promise<void> {
   try {
     await server.listen({ port: cfg.port, host: '127.0.0.1' });
-    server.log.info(`${name} v${version}`);
-    server.log.info(`Forwarding /v1/* → ${cfg.baseUrl} (OpenAI protocol)`);
-    server.log.info(`Forwarding /ollama/* → ${cfg.baseUrl} (Ollama protocol)`);
-    server.log.info(`Forwarding /anthropic/* → ${cfg.anthropicBaseUrl} (Anthropic protocol)`);
-    server.log.info(`Config file: ${cfg.configFile ?? '(none)'}`);
-    server.log.info(`Log dir: ${cfg.logDir}`);
-    // 异步检查 npm registry 是否有新版本，不阻塞启动
-    checkForUpdate(cfg.logDir, version).catch(() => {});
   } catch (err) {
-    server.log.error(err);
+    // 使用 console.error 同步输出，确保端口占用等启动失败错误一定在控制台可见。
+    // server.log.error 依赖 pino 异步 transport（monitor 模式下无 console transport），
+    // 且 process.exit(1) 可能在异步日志 flush 前终止进程，导致静默崩溃。
+    if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+      console.error(`Error: Port ${cfg.port} is already in use. Please free the port or specify a different one with --port.`);
+    } else {
+      console.error('Failed to start server:', err instanceof Error ? err.message : err);
+    }
     process.exit(1);
   }
+  server.log.info(`${name} v${version}`);
+  server.log.info(`Forwarding /v1/* → ${cfg.baseUrl} (OpenAI protocol)`);
+  server.log.info(`Forwarding /ollama/* → ${cfg.baseUrl} (Ollama protocol)`);
+  server.log.info(`Forwarding /anthropic/* → ${cfg.anthropicBaseUrl} (Anthropic protocol)`);
+  server.log.info(`Config file: ${cfg.configFile ?? '(none)'}`);
+  server.log.info(`Log dir: ${cfg.logDir}`);
+  // 异步检查 npm registry 是否有新版本，不阻塞启动
+  checkForUpdate(cfg.logDir, version).catch(() => {});
 
   // Ink 监控面板：接管 stdout，按 q 退出时触发优雅关停
   // 优雅关停逻辑：保存 stats → 关闭 server → 退出进程
@@ -339,8 +346,14 @@ export async function startServer(server: FastifyInstance, cfg: ResolvedConfig):
     const dynamicImport = new Function('modulePath', 'return import(modulePath)') as (path: string) => Promise<any>;
     const monitorModulePath = process.versions.bun ? './monitor/entry.ts' : './monitor.mjs';
     const { startMonitor } = await dynamicImport(monitorModulePath);
+    // 将主进程的 stats 依赖注入 monitor 面板，确保面板操作的是同一份状态
+    // （bun 打包会内联 stats.ts，导致 Node.js 运行时 monitor 持有独立副本，面板数据为空）
     monitorHandle = await startMonitor(name, version, () => {
       gracefulShutdown().catch(() => process.exit(1));
+    }, {
+      statsEmitter, sessionStats, dailyStats,
+      getActiveRequests, getStreamingRequests, getLatencyStats,
+      getRequestLog, resetDailyStats,
     });
   }
 

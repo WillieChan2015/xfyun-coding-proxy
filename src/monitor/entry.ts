@@ -1,14 +1,10 @@
-/**
- * Ink 监控面板 ESM 入口
- *
- * 此文件由 bun 单独打包为 dist/monitor.js（ESM 格式），
- * 避免 ink/React 的 ESM + top-level await 与 CJS 编译产物冲突。
- */
 import { render } from 'ink';
 import React from 'react';
-import { MonitorApp } from './app';
+import { MonitorApp, type StatsDeps } from './app';
 
-export function startMonitor(name: string, version: string, onQuit: () => void) {
+export { type StatsDeps };
+
+export function startMonitor(name: string, version: string, onQuit: () => void, stats: StatsDeps) {
   let unmounted = false;
 
   // exitOnCtrlC: false — 禁用 Ink 默认拦截 Ctrl+C，
@@ -24,6 +20,7 @@ export function startMonitor(name: string, version: string, onQuit: () => void) 
           onQuit();
         }
       },
+      stats,
     }),
     { exitOnCtrlC: false },
   );
