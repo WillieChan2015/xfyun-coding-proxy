@@ -38,6 +38,7 @@ export {
  *    - 流式：先缓存所有 SSE chunks 检测讯飞错误码，正常则透传，异常则降级重试
  */
 export async function handleProxy(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  // 根据请求路径前缀判断协议归属：/ollama/ 开头的请求归入 ollama，其余归入 openai
   const protocol = request.url.startsWith('/ollama/') ? 'ollama' : 'openai';
   const body = request.body as Record<string, unknown> | undefined;
 
@@ -56,15 +57,21 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     `request incoming | ${request.url} | stream=${isStream} | ${summarizeContentTypes(body)} | ua=${ua}`,
   );
 
+  // ---- 构建上游请求 ----
   const upstreamUrl = buildUpstreamUrl(request.url);
 
+  // 仅转发白名单 headers，其余丢弃
+  // 原因：部分 IDE（如 Trae）会添加 destination-domain 等非标准 header，
+  // 讯飞服务端会因 header 值不符合 RFC1035 而返回 400
   const ALLOWED_UPSTREAM_HEADERS = new Set(['x-request-id', 'x-correlation-id']);
 
+  // 构建上游请求 headers：注入 API Key，替换客户端传入的 Authorization
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${config.apiKey}`,
   };
 
+  // 从客户端 headers 中提取白名单项
   for (const [key, value] of Object.entries(request.headers)) {
     const lower = key.toLowerCase();
     if (ALLOWED_UPSTREAM_HEADERS.has(lower) && typeof value === 'string') {
@@ -178,12 +185,11 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
   }
 
   if (result.errorType === 'empty_body') {
-    const status = result.status === 502 ? 500 : result.status;
-    reply.status(status).send({
+    reply.status(result.status).send({
       error: {
         message: `upstream returned ${result.status} with empty body`,
         type: 'upstream_error',
-        code: status,
+        code: result.status,
       },
     });
     return;

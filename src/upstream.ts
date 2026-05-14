@@ -6,7 +6,7 @@
  */
 
 import { FastifyInstance } from 'fastify';
-import { config } from './config';
+import { config, DEFAULT_MODEL } from './config';
 import { readWithTimeout } from './util';
 import { extractTokenUsage, fmtTokens } from './util';
 import { rolloverDailyStats, recordRequestComplete, recordRequestStart, requestStarted, requestFinished, streamingStarted, streamingFinished, Protocol } from './stats';
@@ -483,7 +483,8 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
   requestStarted();
 
   const startTime = Date.now();
-  const model = body?.model as string ?? 'unknown';
+  // const model = body?.model as string ?? 'unknown';
+  const model = DEFAULT_MODEL;
   const ua = typeof reqInfo.headers['user-agent'] === 'string'
     ? reqInfo.headers['user-agent']
     : 'unknown';
