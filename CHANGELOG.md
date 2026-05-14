@@ -16,6 +16,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed / 修复
 
+## [0.0.6-beta.3] - 2026-05-14
+
+### Added / 新增
+
+### Changed / 变更
+
+### Fixed / 修复
+
+- 修复端口占用时进程静默崩溃无错误输出的问题，现在会输出 `Error: Port XXXX is already in use` 并提示使用 `--port` 指定其他端口。
+- Fixed silent crash on port-in-use error; now prints `Error: Port XXXX is already in use` and suggests `--port` flag.
+- 修复 Node.js 运行 dist 包时 Ink 监控面板数据为空的问题，根因是 bun 打包将 `stats.ts` 内联进 `monitor.mjs` 导致面板持有独立的状态副本，与主进程的 `statsEmitter` 事件和统计数据互不相通。现改为通过 `startMonitor` 参数注入主进程的 stats 依赖。
+- Fixed Ink monitor dashboard showing empty data when running the dist build under Node.js; root cause was bun bundler inlining `stats.ts` into `monitor.mjs`, creating a separate stats instance disconnected from the main process. Now stats dependencies are injected via `startMonitor` parameters.
+
 ## [0.0.6-beta.2] - 2026-05-14
 
 ### Added / 新增
