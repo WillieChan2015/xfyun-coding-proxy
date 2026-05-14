@@ -3,29 +3,29 @@ import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { createInterface } from 'node:readline/promises';
 import dotenv from 'dotenv';
+import { z } from 'zod';
 import { CliOptions } from './cli';
 
 /** 代理强制覆盖的模型 ID，所有协议路由统一使用 */
 export const DEFAULT_MODEL = 'astron-code-latest';
 
-export interface ResolvedConfig {
-  port: number;
-  apiKey: string;
-  baseUrl: string;
-  anthropicBaseUrl: string;
-  maxRetries: number;
-  retryDelay: number;
-  verbose: boolean;
-  /** 是否启用实时监控面板，可通过 --no-monitor 或 MONITOR=false 禁用 */
-  monitor: boolean;
-  logDir: string;
-  statsDir: string;
-  statsFlushInterval: number;
-  /** 流式 SSE 单次 read 超时（毫秒），防止上游挂住后 reader.read() 无限阻塞 */
-  streamReadTimeout: number;
-  /** 实际加载的配置文件路径，未找到时为 undefined */
-  configFile?: string;
-}
+export const configSchema = z.object({
+  port: z.number().int().min(1, 'Port must be >= 1').max(65535, 'Port must be <= 65535'),
+  apiKey: z.string().min(1, 'XFYUN_API_KEY is required'),
+  baseUrl: z.string().url('baseUrl must be a valid URL'),
+  anthropicBaseUrl: z.string().url('anthropicBaseUrl must be a valid URL'),
+  maxRetries: z.number().int().min(0, 'maxRetries must be >= 0').max(10, 'maxRetries must be <= 10'),
+  retryDelay: z.number().int().min(100, 'retryDelay must be >= 100').max(60_000, 'retryDelay must be <= 60000'),
+  verbose: z.boolean(),
+  monitor: z.boolean(),
+  logDir: z.string().min(1, 'logDir is required'),
+  statsDir: z.string().min(1, 'statsDir is required'),
+  statsFlushInterval: z.number().int().min(0, 'statsFlushInterval must be >= 0'),
+  streamReadTimeout: z.number().int().min(1_000, 'streamReadTimeout must be >= 1000').max(300_000, 'streamReadTimeout must be <= 300000'),
+  configFile: z.string().optional(),
+});
+
+export type ResolvedConfig = z.infer<typeof configSchema>;
 
 // 模块级 config：loadConfig() 调用后赋值，proxy.ts 等通过 import { config } 读取
 // 初始值提供合理默认，避免测试中 import 时为 undefined
@@ -124,22 +124,20 @@ export function loadConfig(cliOpts: CliOptions): ResolvedConfig {
     configFile: envFile,
   };
 
-  config = resolved;
-  return resolved;
-}
-
-export function validateConfig(cfg?: ResolvedConfig): void {
-  const c = cfg ?? config;
-  if (!c.apiKey) {
-    throw new Error(
-      'XFYUN_API_KEY is required. Set it via --api-key, .env, or environment variable.',
-    );
+  const parsed = configSchema.safeParse(resolved);
+  if (!parsed.success) {
+    const errors = parsed.error.issues
+      .map(i => `  ${i.path.join('.')}: ${i.message}`)
+      .join('\n');
+    throw new Error(`Configuration validation failed:\n${errors}`);
   }
+  config = parsed.data;
+  return parsed.data;
 }
 
 /**
  * 交互式补全缺失的必填配置项
- * 当 apiKey 为空且 stdin 是 TTY 时，提示用户输入；非 TTY 环境直接跳过（由 validateConfig 报错）
+ * 当 apiKey 为空且 stdin 是 TTY 时，提示用户输入；非 TTY 环境直接跳过（由 schema 校验报错）
  */
 export async function promptMissingConfig(cfg: ResolvedConfig): Promise<ResolvedConfig> {
   if (cfg.apiKey || !process.stdin.isTTY) return cfg;

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { parseCli } from './cli';
-import { loadConfig, promptMissingConfig, validateConfig } from './config';
+import { loadConfig, promptMissingConfig } from './config';
 import { createServer, startServer } from './server';
 import { handleStatsCommand } from './stats-cmd';
 import { handleSetupCommand } from './setup-cmd';
@@ -26,7 +26,6 @@ async function main() {
 
   const cfg = loadConfig(cliOpts);
   await promptMissingConfig(cfg);
-  validateConfig(cfg);
   const server = await createServer(cfg);
   await startServer(server, cfg);
 }
