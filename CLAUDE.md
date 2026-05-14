@@ -28,11 +28,13 @@ src/
 ├── server.ts           # HTTP 服务器启动、信号处理、定时刷盘、Ink 监控集成
 ├── config.ts           # 环境变量配置加载
 ├── proxy.ts            # OpenAI 协议 handler（/v1/*）
+├── upstream.ts         # 上游请求核心：转发、流式、重试、SSE 过滤
+├── errors.ts           # 统一错误处理与响应格式化
 ├── stats.ts            # 统计数据模型、持久化、事件发射、并发/延迟追踪
 ├── stats-cmd.ts        # CLI stats 子命令逻辑
 ├── util.ts             # 工具函数（token 提取、格式化）
 ├── monitor/            # Ink 实时监控面板
-│   ├── index.ts        # 监控入口（startMonitor）
+│   ├── entry.ts        # 监控入口（startMonitor），接收 stats 依赖注入
 │   ├── app.tsx         # MonitorApp 主组件
 │   ├── header.tsx      # 顶部状态栏
 │   ├── token-panel.tsx # Token 用量面板

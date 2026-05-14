@@ -60,7 +60,7 @@ export function LogStream({ entries, errorCount, maxVisible = 8, scrollOffset, t
           : entry.success
             ? `| ${(entry.latencyMs / 1000).toFixed(1)}s | in=${fmtTokens(entry.inputTokens)} out=${fmtTokens(entry.outputTokens)} total=${fmtTokens(entry.inputTokens + entry.outputTokens)} | ua=${entry.ua ?? 'unknown'}`
             : `| ${entry.latencyMs}ms | ${entry.error ?? 'unknown error'} | ua=${entry.ua ?? 'unknown'}`;
-        return <Text key={i}>{head} {tail}</Text>;
+        return <Text key={i} color={!entry.success ? 'red' : undefined}>{head} {tail}</Text>;
       })}
       {hasMoreBelow && <Text dimColor>  ↓ ↓ ↓ {filtered.length - start - maxVisible} more below</Text>}
       {filtered.length === 0 && <Text dimColor>  {tab === 'errors' ? 'No errors' : 'No requests yet...'}</Text>}

@@ -313,12 +313,18 @@ export async function startServer(server: FastifyInstance, cfg: ResolvedConfig):
     }
     process.exit(1);
   }
-  server.log.info(`${name} v${version}`);
-  server.log.info(`Forwarding /v1/* → ${cfg.baseUrl} (OpenAI protocol)`);
-  server.log.info(`Forwarding /ollama/* → ${cfg.baseUrl} (Ollama protocol)`);
-  server.log.info(`Forwarding /anthropic/* → ${cfg.anthropicBaseUrl} (Anthropic protocol)`);
-  server.log.info(`Config file: ${cfg.configFile ?? '(none)'}`);
-  server.log.info(`Log dir: ${cfg.logDir}`);
+  // monitor 模式下 pino 无 console transport，server.log.info 不会输出到终端，
+  // 改用 console.log 确保启动信息在 Ink 接管 stdout 前可见
+  const logStartup = cfg.monitor
+    ? (msg: string) => console.log(msg)
+    : (msg: string) => server.log.info(msg);
+  // logStartup(`${name} v${version}`);
+  logStartup(`Forwarding /v1/* → ${cfg.baseUrl} (OpenAI protocol)`);
+  logStartup(`Forwarding /ollama/* → ${cfg.baseUrl} (Ollama protocol)`);
+  logStartup(`Forwarding /anthropic/* → ${cfg.anthropicBaseUrl} (Anthropic protocol)`);
+  logStartup(`Config file: ${cfg.configFile ?? '(none)'}`);
+  logStartup(`Log dir: ${cfg.logDir}`);
+  logStartup(`Listening on http://127.0.0.1:${cfg.port}`);
   // 异步检查 npm registry 是否有新版本，不阻塞启动
   checkForUpdate(cfg.logDir, version).catch(() => {});
 
@@ -354,6 +360,10 @@ export async function startServer(server: FastifyInstance, cfg: ResolvedConfig):
       statsEmitter, sessionStats, dailyStats,
       getActiveRequests, getStreamingRequests, getLatencyStats,
       getRequestLog, resetDailyStats,
+    }, {
+      port: cfg.port,
+      baseUrl: cfg.baseUrl,
+      anthropicBaseUrl: cfg.anthropicBaseUrl,
     });
   }
 

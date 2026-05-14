@@ -4,7 +4,13 @@ import { MonitorApp, type StatsDeps } from './app';
 
 export { type StatsDeps };
 
-export function startMonitor(name: string, version: string, onQuit: () => void, stats: StatsDeps) {
+export interface MonitorConfig {
+  port: number;
+  baseUrl: string;
+  anthropicBaseUrl: string;
+}
+
+export function startMonitor(name: string, version: string, onQuit: () => void, stats: StatsDeps, monitorConfig: MonitorConfig) {
   let unmounted = false;
 
   // exitOnCtrlC: false — 禁用 Ink 默认拦截 Ctrl+C，
@@ -21,6 +27,7 @@ export function startMonitor(name: string, version: string, onQuit: () => void, 
         }
       },
       stats,
+      monitorConfig,
     }),
     { exitOnCtrlC: false },
   );

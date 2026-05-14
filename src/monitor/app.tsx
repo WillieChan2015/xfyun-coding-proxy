@@ -100,9 +100,10 @@ interface AppProps {
   version: string;
   onQuit: () => void;
   stats: StatsDeps;
+  monitorConfig: { port: number; baseUrl: string; anthropicBaseUrl: string };
 }
 
-export function MonitorApp({ name, version, onQuit, stats }: AppProps) {
+export function MonitorApp({ name, version, onQuit, stats, monitorConfig }: AppProps) {
   const { statsEmitter, sessionStats, dailyStats, getActiveRequests, getStreamingRequests, getLatencyStats, getRequestLog, resetDailyStats } = stats;
   const { exit } = useApp();
 
@@ -236,7 +237,7 @@ export function MonitorApp({ name, version, onQuit, stats }: AppProps) {
 
   return (
     <Box flexDirection="column">
-      <Header name={name} version={version} requestsPerMin={state.requestsPerMin} successRate={state.successRate} />
+      <Header name={name} version={version} requestsPerMin={state.requestsPerMin} successRate={state.successRate} port={monitorConfig.port} baseUrl={monitorConfig.baseUrl} anthropicBaseUrl={monitorConfig.anthropicBaseUrl} />
       <Box flexDirection="row">
         <Box width="50%">
           <TokenPanel input={state.tokenInput} output={state.tokenOutput} byProtocol={state.byProtocol} />
