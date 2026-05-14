@@ -664,7 +664,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
   if (isStream && response.body) {
     streamingStarted();
 
-    const reader = response.body.getReader();
+    const reader = response.body!.getReader() as ReadableStreamDefaultReader<Uint8Array>;
     const sseFilter = new SSEFilter(allowedSSEEvents);
     let inputTokens: number | undefined;
     let outputTokens: number | undefined;

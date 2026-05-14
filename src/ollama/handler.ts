@@ -322,7 +322,7 @@ async function handleOllamaProxy(
       'X-Accel-Buffering': 'no',
     });
 
-    const reader = response.body.getReader();
+    const reader = response.body!.getReader() as ReadableStreamDefaultReader<Uint8Array>;
     const sseFilter = new SSEFilter();
     const ndjsonConverter = new SSEToNDJSONConverter(endpoint);
     let promptTokens: number | undefined;

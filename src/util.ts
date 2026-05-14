@@ -83,11 +83,10 @@ function extractTextFromBlocks(blocks: unknown[]): number {
  * @param reader - ReadableStream 的 reader
  * @param timeoutMs - 单次 read 最长等待毫秒数
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function readWithTimeout(
-  reader: any,
+  reader: ReadableStreamDefaultReader<Uint8Array>,
   timeoutMs: number,
-): Promise<{ done: boolean; value: Uint8Array }> {
+): Promise<Bun.ReadableStreamDefaultReadResult<Uint8Array>> {
   const readPromise = reader.read();
   const timeoutPromise = new Promise<never>((_resolve, reject) => {
     setTimeout(() => {
