@@ -15,7 +15,7 @@ import type { RequestCompleteEvent } from '../stats';
 export interface StatsDeps {
   statsEmitter: NodeJS.EventEmitter;
   sessionStats: { requestCount: number; errors: number; totalPromptTokens: number; totalCompletionTokens: number; protocols: Record<string, { totalPromptTokens: number; totalCompletionTokens: number }> };
-  dailyStats: { requestCount: number; errors: number };
+  dailyStats: { requestCount: number; errors: number; totalPromptTokens: number; totalCompletionTokens: number };
   getActiveRequests: () => number;
   getStreamingRequests: () => number;
   getLatencyStats: () => { avg: number; p95: number };
@@ -28,6 +28,7 @@ interface MonitorState {
   successRate: number;
   tokenInput: number;
   tokenOutput: number;
+  todayTokenTotal: number;
   byProtocol: { name: string; tokens: number }[];
   active: number;
   streaming: number;
@@ -112,6 +113,7 @@ export function MonitorApp({ name, version, onQuit, stats, monitorConfig }: AppP
     successRate: calcSuccessRate(sessionStats),
     tokenInput: sessionStats.totalPromptTokens,
     tokenOutput: sessionStats.totalCompletionTokens,
+    todayTokenTotal: dailyStats.totalPromptTokens + dailyStats.totalCompletionTokens,
     byProtocol: getProtocolUsage(sessionStats),
     active: getActiveRequests(),
     streaming: getStreamingRequests(),
@@ -240,7 +242,7 @@ export function MonitorApp({ name, version, onQuit, stats, monitorConfig }: AppP
       <Header name={name} version={version} requestsPerMin={state.requestsPerMin} successRate={state.successRate} port={monitorConfig.port} baseUrl={monitorConfig.baseUrl} anthropicBaseUrl={monitorConfig.anthropicBaseUrl} />
       <Box flexDirection="row">
         <Box width="50%">
-          <TokenPanel input={state.tokenInput} output={state.tokenOutput} byProtocol={state.byProtocol} />
+          <TokenPanel input={state.tokenInput} output={state.tokenOutput} todayTotal={state.todayTokenTotal} byProtocol={state.byProtocol} />
         </Box>
         <Box width="50%">
           <RequestPanel

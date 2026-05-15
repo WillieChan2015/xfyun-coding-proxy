@@ -8,6 +8,7 @@ import {
 } from './release-dry-run.mjs';
 import { prepareRelease } from './prepare-release.mjs';
 import { verifyChangelogVersion } from './verify-changelog-version.mjs';
+import { smokeTest } from './smoke-test.mjs';
 
 // 自动化入口仍然依赖真实外部命令执行，统一包装后更容易在测试里替换掉。
 function run(command, args, options = {}) {
@@ -115,6 +116,8 @@ export async function runReleaseAutomation(versionInput, options = {}) {
   const packageJsonPath = options.packageJsonPath ?? 'package.json';
   const changelogPath = options.changelogPath ?? 'CHANGELOG.md';
 
+  const smokeTestFn = options.smokeTestFn ?? smokeTest;
+
   // 先跑 dry-run，把目标版本、tag、changelog 迁移和阻塞项一次性展示出来。
   const preview = await previewFn(versionInput, { packageJsonPath, changelogPath });
   logger.log(formatPreviewFn(preview));
@@ -125,7 +128,7 @@ export async function runReleaseAutomation(versionInput, options = {}) {
   }
 
   logger.log(
-    `Planned steps: pnpm test -> pnpm build -> pnpm release:prepare ${versionInput} -> pnpm release:check -> git diff --check${push ? ' -> git push -> git push --tags' : ''}`,
+    `Planned steps: pnpm test -> smoke test (src) -> pnpm build -> smoke test (dist) -> pnpm release:prepare ${versionInput} -> pnpm release:check -> git diff --check${push ? ' -> git push -> git push --tags' : ''}`,
   );
 
   // dry-run 模式只打印计划，不执行任何会改动仓库或远端状态的动作。
@@ -151,8 +154,16 @@ export async function runReleaseAutomation(versionInput, options = {}) {
   logger.log('Running release preflight: pnpm test');
   runCommand('pnpm', ['test']);
 
+  // 冒烟测试（源码）：验证 pnpm start 能正常启动并监听端口
+  logger.log('Running smoke test (source code)...');
+  await smokeTestFn('pnpm', ['start', '--port', '3001'], { logger });
+
   logger.log('Running release preflight: pnpm build');
   runCommand('pnpm', ['build']);
+
+  // 冒烟测试（构建产物）：验证 dist/index.js 能正常启动并监听端口
+  logger.log('Running smoke test (dist build)...');
+  await smokeTestFn('node', ['dist/index.js', '--port', '3001'], { logger });
 
   // 真正的版本升级、changelog 迁移、commit 和 tag 创建统一交给 prepareRelease 处理。
   const prepared = await prepareFn(versionInput, { packageJsonPath, changelogPath });

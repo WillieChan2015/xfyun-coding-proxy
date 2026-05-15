@@ -9,10 +9,11 @@ interface ProtocolUsage {
 interface TokenPanelProps {
   input: number;
   output: number;
+  todayTotal: number;
   byProtocol: ProtocolUsage[];
 }
 
-export function TokenPanel({ input, output, byProtocol }: TokenPanelProps) {
+export function TokenPanel({ input, output, todayTotal, byProtocol }: TokenPanelProps) {
   const total = input + output;
   return (
     <Box flexDirection="column" paddingX={1}>
@@ -20,6 +21,7 @@ export function TokenPanel({ input, output, byProtocol }: TokenPanelProps) {
       <Text>  Input:  {fmtTokens(input)}</Text>
       <Text>  Output: {fmtTokens(output)}</Text>
       <Text>  Total:  {fmtTokens(total)}</Text>
+      <Text>  Today:  {fmtTokens(todayTotal)}</Text>
       {byProtocol.length > 0 && (
         <Box flexDirection="column" marginTop={1}>
           <Text bold>  By Protocol:</Text>

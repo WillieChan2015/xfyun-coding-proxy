@@ -102,6 +102,7 @@ describe('runReleaseAutomation', () => {
         return { version: '0.0.2', tagName: 'v0.0.2' };
       },
       verifyFn: async () => '0.0.2',
+      smokeTestFn: async () => {},
     });
 
     expect(result.status).toBe('dry-run');
@@ -112,9 +113,10 @@ describe('runReleaseAutomation', () => {
     expect(lines.join('\n')).toContain('dry-run');
   });
 
-  it('asks for confirmation, then runs checks, prepares the release, and pushes when enabled', async () => {
+  it('asks for confirmation, then runs checks, smoke tests, prepares the release, and pushes when enabled', async () => {
     const { logger } = createLogger();
     const commandCalls: Array<[string, string[]]> = [];
+    const smokeTestCalls: Array<[string, string[]]> = [];
     const prepareCalls: string[] = [];
     const verifyCalls: Array<[string, string]> = [];
     let confirmCalls = 0;
@@ -134,6 +136,9 @@ describe('runReleaseAutomation', () => {
         commandCalls.push([command, args]);
         return '';
       },
+      smokeTestFn: async (command, args) => {
+        smokeTestCalls.push([command, args]);
+      },
       prepareFn: async (versionInput) => {
         prepareCalls.push(versionInput);
         return { version: '0.0.2', tagName: 'v0.0.2' };
@@ -147,12 +152,18 @@ describe('runReleaseAutomation', () => {
     expect(confirmCalls).toBe(1);
     expect(prepareCalls).toEqual(['patch']);
     expect(verifyCalls).toEqual([['package.json', 'CHANGELOG.md']]);
+    // 命令执行顺序：test → smoke(src) → build → smoke(dist) → diff --check → push → push --tags
     expect(commandCalls).toEqual([
       ['pnpm', ['test']],
       ['pnpm', ['build']],
       ['git', ['diff', '--check']],
       ['git', ['push']],
       ['git', ['push', '--tags']],
+    ]);
+    // 冒烟测试调用顺序：先源码，后构建产物
+    expect(smokeTestCalls).toEqual([
+      ['pnpm', ['start', '--port', '3001']],
+      ['node', ['dist/index.js', '--port', '3001']],
     ]);
     expect(result.status).toBe('pushed');
     if (result.status !== 'pushed') {
@@ -178,7 +189,52 @@ describe('runReleaseAutomation', () => {
         runCommand: () => '',
         prepareFn: async () => ({ version: '0.0.2', tagName: 'v0.0.2' }),
         verifyFn: async () => '0.0.2',
+        smokeTestFn: async () => {},
       }),
     ).rejects.toThrow('Release automation blocked: Unreleased section is empty');
+  });
+
+  it('fails fast when source smoke test fails', async () => {
+    const { logger } = createLogger();
+
+    await expect(
+      runReleaseAutomation('patch', {
+        logger,
+        yes: true,
+        previewFn: async () => createPreview(),
+        formatPreviewFn: () => 'formatted preview',
+        runCommand: () => '',
+        smokeTestFn: async (command, args) => {
+          // 源码冒烟测试失败
+          if (command === 'pnpm' && args[0] === 'start') {
+            throw new Error('Smoke test failed: pnpm start --port 3001 exited with code 1');
+          }
+        },
+        prepareFn: async () => ({ version: '0.0.2', tagName: 'v0.0.2' }),
+        verifyFn: async () => '0.0.2',
+      }),
+    ).rejects.toThrow('Smoke test failed: pnpm start --port 3001 exited with code 1');
+  });
+
+  it('fails fast when dist smoke test fails', async () => {
+    const { logger } = createLogger();
+
+    await expect(
+      runReleaseAutomation('patch', {
+        logger,
+        yes: true,
+        previewFn: async () => createPreview(),
+        formatPreviewFn: () => 'formatted preview',
+        runCommand: () => '',
+        smokeTestFn: async (command, args) => {
+          // 构建产物冒烟测试失败
+          if (command === 'node' && args[0] === 'dist/index.js') {
+            throw new Error('Smoke test failed: node dist/index.js --port 3001 exited with code 1');
+          }
+        },
+        prepareFn: async () => ({ version: '0.0.2', tagName: 'v0.0.2' }),
+        verifyFn: async () => '0.0.2',
+      }),
+    ).rejects.toThrow('Smoke test failed: node dist/index.js --port 3001 exited with code 1');
   });
 });

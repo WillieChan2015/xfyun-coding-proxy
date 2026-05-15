@@ -8,7 +8,7 @@ interface CacheData {
 
 const CACHE_FILE = '.update-check.json';
 // 两次 registry 请求的最小间隔
-const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const CHECK_INTERVAL_MS = 1 * 60 * 60 * 1000;
 
 const REGISTRY_URL = 'https://registry.npmjs.org/maas-coding-proxy/latest';
 const FETCH_TIMEOUT_MS = 5000;
@@ -68,9 +68,13 @@ export async function checkForUpdate(cacheDir: string, currentVersion: string): 
   }
 
   if (shouldFetch) {
-    latestVersion = await fetchLatestVersion();
-    if (latestVersion) {
-      writeCache(cacheDir, { lastCheck: Date.now(), latestVersion });
+    const fetched = await fetchLatestVersion();
+    if (fetched) {
+      latestVersion = fetched;
+      writeCache(cacheDir, { lastCheck: Date.now(), latestVersion: fetched });
+    } else if (cached) {
+      // 网络失败时回退使用缓存版本号，避免丢失已有的更新提示
+      latestVersion = cached.latestVersion;
     }
   }
 

@@ -124,7 +124,17 @@ export function loadConfig(cliOpts: CliOptions): ResolvedConfig {
     configFile: envFile,
   };
 
-  const parsed = configSchema.safeParse(resolved);
+  config = resolved;
+  return resolved;
+}
+
+/**
+ * 校验配置对象，失败时抛出包含所有字段错误的 Error
+ * 在 promptMissingConfig 之后调用，确保交互式补全的值也被校验
+ */
+export function validateConfig(cfg?: ResolvedConfig): void {
+  const c = cfg ?? config;
+  const parsed = configSchema.safeParse(c);
   if (!parsed.success) {
     const errors = parsed.error.issues
       .map(i => `  ${i.path.join('.')}: ${i.message}`)
@@ -132,7 +142,6 @@ export function loadConfig(cliOpts: CliOptions): ResolvedConfig {
     throw new Error(`Configuration validation failed:\n${errors}`);
   }
   config = parsed.data;
-  return parsed.data;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { loadConfig, configSchema } from '../../src/config';
+import { loadConfig, validateConfig, configSchema } from '../../src/config';
 
 const ENV_KEYS = [
   'PORT',
@@ -32,31 +32,32 @@ describe('config schema validation', () => {
 
   it('rejects port 0', () => {
     process.env.PORT = '0';
-    expect(() => loadConfig({ verbose: false })).toThrow(/port.*>= 1/);
+    expect(() => { loadConfig({ verbose: false }); validateConfig(); }).toThrow(/port.*>= 1/);
   });
 
   it('rejects port above 65535', () => {
     process.env.PORT = '70000';
-    expect(() => loadConfig({ verbose: false })).toThrow(/port.*<= 65535/);
+    expect(() => { loadConfig({ verbose: false }); validateConfig(); }).toThrow(/port.*<= 65535/);
   });
 
   it('rejects non-numeric port', () => {
     process.env.PORT = 'abc';
-    expect(() => loadConfig({ verbose: false })).toThrow(/port/);
+    expect(() => { loadConfig({ verbose: false }); validateConfig(); }).toThrow(/port/);
   });
 
   it('rejects negative maxRetries', () => {
     process.env.MAX_RETRIES = '-1';
-    expect(() => loadConfig({ verbose: false })).toThrow(/maxRetries.*>= 0/);
+    expect(() => { loadConfig({ verbose: false }); validateConfig(); }).toThrow(/maxRetries.*>= 0/);
   });
 
   it('rejects maxRetries above 10', () => {
     process.env.MAX_RETRIES = '11';
-    expect(() => loadConfig({ verbose: false })).toThrow(/maxRetries.*<= 10/);
+    expect(() => { loadConfig({ verbose: false }); validateConfig(); }).toThrow(/maxRetries.*<= 10/);
   });
 
   it('accepts valid config via CLI options', () => {
     const cfg = loadConfig({ verbose: false, apiKey: 'test-key' });
+    validateConfig(cfg);
     expect(cfg.apiKey).toBe('test-key');
     expect(cfg.port).toBe(3000);
   });
@@ -66,6 +67,7 @@ describe('config schema validation', () => {
     process.env.MAX_RETRIES = '-1';
     try {
       loadConfig({ verbose: false });
+      validateConfig();
       expect.unreachable('should have thrown');
     } catch (e) {
       const msg = (e as Error).message;

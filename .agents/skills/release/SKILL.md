@@ -71,6 +71,7 @@ user-invocable: true
         - 创建本地 commit：`chore: release vX.Y.Z`；
         - 创建本地 annotated tag：`vX.Y.Z`。
           - `release:auto` 还会在变更前自动运行 `pnpm test` 与 `pnpm build`，并在准备完成后执行 `pnpm release:check` 与 `git diff --check`；加上 `--push` 时会继续执行 `git push` 和 `git push --tags`。
+          - `release:auto` 在 `pnpm test` 之后、`pnpm build` 之前会执行**源码冒烟测试**（`pnpm start --port 3001`），在 `pnpm build` 之后会执行**构建产物冒烟测试**（`node dist/index.js --port 3001`），确保源码和构建产物均能正常启动并监听端口。
 
 6. **复核本地产物**
    - 检查 `package.json` 的 `version`。
@@ -85,7 +86,9 @@ user-invocable: true
    - 运行：
      - `pnpm release:check`
      - `pnpm test`
+     - **源码冒烟测试**：`node .github/scripts/smoke-test.mjs pnpm start --port 3001`（验证源码能正常启动）
      - `pnpm build`
+     - **构建产物冒烟测试**：`node .github/scripts/smoke-test.mjs node dist/index.js --port 3001`（验证构建产物能正常启动）
      - `git diff --check`
    - **敏感信息检查**：扫描 `package.json` `files` 字段包含的所有文件（`dist/`、`.env.example`、`README.md`、`CHANGELOG.md`、`docs/README.en.md`）以及 `src/` 源码，确认不存在真实密钥、token 或其他敏感信息泄露。检查项包括：
      - 硬编码的 API Key（如 `sk-` 开头的真实密钥、`eyJ` 开头的 JWT）
