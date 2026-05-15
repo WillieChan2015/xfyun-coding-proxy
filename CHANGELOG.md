@@ -16,6 +16,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed / 修复
 
+## [0.0.6-beta.4] - 2026-05-15
+
+### Added / 新增
+
+- 新增 `XFYUN_API_KEY` 环境变量必填校验，启动时缺失则报错退出。
+- Added required validation for `XFYUN_API_KEY` env var; exits with error if missing at startup.
+- 新增 `MONITOR` 环境变量控制是否启用 Ink 实时监控面板。
+- Added `MONITOR` env var to toggle the Ink real-time monitoring panel.
+- 新增端口范围校验，`PORT` 环境变量超出 1-65535 范围时报错。
+- Added port range validation; errors when `PORT` env var is outside 1–65535.
+- 新增版本更新检查功能，启动时检测 npm registry 是否有新版本并提示。
+- Added update check on startup; notifies when a newer version is available on npm.
+- 新增发布冒烟测试脚本 `smoke-test.mjs`，验证源码和构建产物均能正常启动并监听端口。
+- Added release smoke test script `smoke-test.mjs` to verify both source and dist builds start and listen on the expected port.
+- Token 用量面板新增 prompt / completion 分项显示及占比百分比。
+- Token usage panel now shows prompt/completion breakdown with percentage.
+
+### Changed / 变更
+
+- 监控面板布局重构，优化组件排列与信息展示。
+- Refactored monitoring panel layout for improved component arrangement and information display.
+- `release:auto` 流程在 `pnpm test` 后插入源码冒烟测试，在 `pnpm build` 后插入构建产物冒烟测试。
+- `release:auto` now runs source smoke test after `pnpm test` and dist smoke test after `pnpm build`.
+
+### Fixed / 修复
+
 ## [0.0.6-beta.3] - 2026-05-14
 
 ### Added / 新增
