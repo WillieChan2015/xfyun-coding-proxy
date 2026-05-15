@@ -153,6 +153,7 @@ export function MonitorApp({ name, version, onQuit, stats, monitorConfig }: AppP
       successRate: calcSuccessRate(sessionStats),
       tokenInput: sessionStats.totalPromptTokens,
       tokenOutput: sessionStats.totalCompletionTokens,
+      todayTokenTotal: dailyStats.totalPromptTokens + dailyStats.totalCompletionTokens,
       byProtocol: getProtocolUsage(sessionStats),
       active: getActiveRequests(),
       streaming: getStreamingRequests(),
