@@ -49,7 +49,7 @@ export function LogStream({ entries, errorCount, maxVisible = 8, scrollOffset, t
           bold={tab === 'errors'}
           color={tab === 'errors' ? 'red' : undefined}
           inverse={tab === 'errors'}
-        > Errors{errorCount > 0 ? `(${errorCount})` : ''} </Text>
+        >{` Errors${errorCount > 0 ? `(${errorCount})` : ''} `}</Text>
       </Box>
       {hasMoreAbove && <Text dimColor>  ↑ ↑ ↑ {start} more above</Text>}
       {visible.map((entry, i) => {
