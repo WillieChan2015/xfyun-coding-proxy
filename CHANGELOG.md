@@ -12,7 +12,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added / 新增
 
+- 监控面板 Token 用量区新增今日总令牌数显示（prompt + completion 合计）。
+- Token usage panel now shows today's total token count (prompt + completion combined).
+
 ### Changed / 变更
+
+- 调整日志流错误标签的文本拼接格式。
+- Adjusted text concatenation format for error tab label in log stream.
 
 ### Fixed / 修复
 
