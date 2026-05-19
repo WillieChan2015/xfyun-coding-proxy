@@ -12,6 +12,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added / 新增
 
+### Changed / 变更
+
+### Fixed / 修复
+
+## [0.0.6-beta.5] - 2026-05-19
+
+### Added / 新增
+
 - 监控面板 Token 用量区新增今日总令牌数显示（prompt + completion 合计）。
 - Token usage panel now shows today's total token count (prompt + completion combined).
 
