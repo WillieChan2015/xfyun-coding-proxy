@@ -10,9 +10,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Added / 新增
-
 ### Changed / 变更
+
+- 迁移至 ESM 模块系统，移除 CJS 桥接层，统一使用 import/import.meta。
+- Migrated to ESM module system, removed CJS bridge layer, unified to import/import.meta.
+- 重构构建流程：新增 `scripts/build.ts`，使用 bun build 生成单文件 ESM bundle + tsc API 生成声明文件。
+- Refactored build pipeline: added `scripts/build.ts`, using bun build for single-file ESM bundle + tsc API for declarations.
+- `stats.ts` 添加 `dailyStatsDirty` 脏标记，避免无请求时覆写已有持久化数据。
+- Added `dailyStatsDirty` flag in `stats.ts` to avoid overwriting existing persisted data when no requests occurred.
+- `util.ts` 移除 Bun 特有类型，改用标准 `ReadableStreamReadResult`。
+- Removed Bun-specific types in `util.ts`, switched to standard `ReadableStreamReadResult`.
+- 最低 Node.js 版本要求提升至 20.11（需 `import.meta.dirname` 支持）。
+- Raised minimum Node.js version requirement to 20.11 (requires `import.meta.dirname` support).
+- `pretty-roll-transport.js` 重命名为 `.cjs`（pino Worker Thread 需要 CJS 格式）。
+- Renamed `pretty-roll-transport.js` to `.cjs` (pino Worker Thread requires CJS format).
+
+### Removed / 移除
+
+- 移除 monitor CJS 桥接层，改为 ESM 直接 import。
+- Removed monitor CJS bridge layer, replaced with direct ESM import.
 
 ### Fixed / 修复
 
