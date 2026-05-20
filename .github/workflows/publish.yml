@@ -34,7 +34,7 @@ jobs:
 
       - name: Verify tag matches package version
         run: |
-          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          PACKAGE_VERSION="$(node -e "const fs=require('fs');process.stdout.write(JSON.parse(fs.readFileSync('package.json','utf8')).version)")"
           if [[ "v$PACKAGE_VERSION" != "$GITHUB_REF_NAME" ]]; then
             echo "::error::Tag $GITHUB_REF_NAME does not match package.json version v$PACKAGE_VERSION"
             exit 1

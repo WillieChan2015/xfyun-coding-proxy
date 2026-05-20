@@ -86,8 +86,8 @@ function extractTextFromBlocks(blocks: unknown[]): number {
 export async function readWithTimeout(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   timeoutMs: number,
-): Promise<Bun.ReadableStreamDefaultReadResult<Uint8Array>> {
-  const readPromise = reader.read();
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  const readPromise = reader.read() as Promise<ReadableStreamReadResult<Uint8Array>>;
   const timeoutPromise = new Promise<never>((_resolve, reject) => {
     setTimeout(() => {
       reject(new Error(

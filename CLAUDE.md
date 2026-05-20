@@ -54,7 +54,7 @@ src/
 ## Conventions
 
 - 遵循 `AGENTS.md` 中的协作约定与改动守则；遵循 `.github/copilot-instructions.md`（若存在）中的本地 AI 辅助规则。三者冲突时以 CLAUDE.md > AGENTS.md > copilot-instructions.md 为优先级。
-- 需求文档放在 `.github/docs/`，命名格式 `xxx-requirements.md`；文档索引与目录结构以 `.github/docs/README.md`（若存在）为准，新增或移动文档后同步更新该索引
+- 需求文档放在 `.github/docs/`，若 `.github/docs/README.md` 存在，则放置规则以 `.github/docs/README.md` 为准，否则命名格式 `xxx-requirements.md`；文档索引与目录结构以 `.github/docs/README.md`（若存在）为准，新增或移动文档后同步更新该索引
 - 变更日志遵循 Keep-a-Changelog 格式，手动维护 `CHANGELOG.md`
 - 版本号在 `package.json` 和 `CHANGELOG.md` 中保持一致
 - Git 提交信息格式：`type: description`（feat/fix/chore/docs/refactor）

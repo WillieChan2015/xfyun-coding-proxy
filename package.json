@@ -1,5 +1,6 @@
 {
   "name": "maas-coding-proxy",
+  "type": "module",
   "version": "0.0.6-beta.5",
   "description": "Local proxy for iFlytek Xingchen Coding Plan API (OpenAI-compatible)",
   "main": "dist/index.js",
@@ -19,7 +20,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.11"
   },
   "repository": {
     "type": "git",
@@ -29,7 +30,7 @@
   "scripts": {
     "start": "bun src/index.ts",
     "dev": "bun --watch src/index.ts",
-    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc && bun build src/monitor/entry.ts --outfile dist/monitor.mjs --target=node --format=esm --packages=external && cp src/pretty-roll-transport.js dist/",
+    "build": "bun scripts/build.ts",
     "prepack": "chmod +x dist/index.js",
     "prepublishOnly": "pnpm release:check && pnpm test && pnpm build",
     "release:auto": "node .github/scripts/release-auto.mjs",

@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "commonjs",
-    "lib": ["ES2022"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
     "outDir": "dist",
     "rootDir": "src",
     "strict": true,
@@ -15,12 +15,8 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "jsx": "react-jsx",
-    "baseUrl": ".",
-    "paths": {
-      "ink": ["./node_modules/ink/build/index.d.ts"]
-    }
+    "jsx": "react-jsx"
   },
   "include": ["src"],
-  "exclude": ["node_modules", "dist", "src/monitor"]
+  "exclude": ["node_modules", "dist"]
 }

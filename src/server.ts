@@ -1,4 +1,6 @@
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import Fastify, { FastifyInstance, FastifyError, FastifyRequest, FastifyReply } from 'fastify';
 import cors from '@fastify/cors';
 import { ResolvedConfig, config, DEFAULT_MODEL } from './config';
@@ -7,10 +9,11 @@ import { handleOllamaChat, handleOllamaGenerate } from './ollama/handler';
 import { handleAnthropicMessages } from './anthropic/handler';
 import { estimateInputTokens } from './util';
 import { printSessionSummary, initDailyStats, saveDailyStats, rolloverDailyStats, dailyStats, recordRequestComplete, requestFinished, getRequestLog, statsEmitter, sessionStats, getActiveRequests, getStreamingRequests, getLatencyStats, resetDailyStats } from './stats';
-import { checkForUpdate } from './update-check.js';
+import { checkForUpdate } from './update-check';
 
 // 读取当前包版本，用于启动时更新检查
-const { name, version } = require('../package.json');
+const pkg = JSON.parse(readFileSync(resolve(import.meta.dirname, '../package.json'), 'utf-8'));
+const { name, version } = pkg;
 let flushTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
@@ -37,7 +40,7 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
   const loggerTargets = cfg.monitor
     ? [
         {
-          target: './pretty-roll-transport.js',
+          target: './pretty-roll-transport.cjs',
           level: 'info' as const,
           options: {
             file: path.join(cfg.logDir, 'proxy.log'),
@@ -55,7 +58,7 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
           level: 'info' as const,
         },
         {
-          target: './pretty-roll-transport.js',
+          target: './pretty-roll-transport.cjs',
           level: 'info' as const,
           options: {
             file: path.join(cfg.logDir, 'proxy.log'),
@@ -347,11 +350,7 @@ export async function startServer(server: FastifyInstance, cfg: ResolvedConfig):
 
   let monitorHandle: { unmount: () => void } | null = null;
   if (cfg.monitor) {
-    // Node 发布态加载 bun 产出的 monitor ESM bundle；Bun 源码运行时则直接加载 TS 入口。
-    // 使用 Function('return import') 确保 tsc (module: commonjs) 不会将 import() 编译为 require()。
-    const dynamicImport = new Function('modulePath', 'return import(modulePath)') as (path: string) => Promise<any>;
-    const monitorModulePath = process.versions.bun ? './monitor/entry.ts' : './monitor.mjs';
-    const { startMonitor } = await dynamicImport(monitorModulePath);
+    const { startMonitor } = await import('./monitor/entry.js');
     // 将主进程的 stats 依赖注入 monitor 面板，确保面板操作的是同一份状态
     // （bun 打包会内联 stats.ts，导致 Node.js 运行时 monitor 持有独立副本，面板数据为空）
     monitorHandle = await startMonitor(name, version, () => {

@@ -10,16 +10,7 @@ interface HeaderProps {
   anthropicBaseUrl: string;
 }
 
-/** 从完整 URL 中提取 host 部分，如 https://maas-coding-api.cn-huabei-1.xf-yun.com/v2 → maas-coding-api.cn-huabei-1.xf-yun.com */
-function extractHost(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
-}
-
-export function Header({ name, version, requestsPerMin, successRate, port, baseUrl, anthropicBaseUrl }: HeaderProps) {
+export function Header({ name, version, requestsPerMin, successRate }: HeaderProps) {
   const rateColor = successRate >= 99 ? 'green' : successRate >= 95 ? 'yellow' : 'red';
   return (
     <Box flexDirection="column">

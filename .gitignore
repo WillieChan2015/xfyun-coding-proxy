@@ -10,6 +10,7 @@ src/**/*.js.map
 
 # 例外
 !src/pretty-roll-transport.js
+!src/pretty-roll-transport.cjs
 
 # Local runtime artifacts
 logs/

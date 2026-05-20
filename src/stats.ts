@@ -49,6 +49,9 @@ export const dailyStats: DailyStats = {
   protocols: {},
 };
 
+// 脏标记：dailyStats 被修改后置 true，避免启动后无请求退出时将加载的数据原样覆写（或加载失败时用全零覆盖已有数据）
+let dailyStatsDirty = false;
+
 export function todayStr(): string {
   const d = new Date();
   const year = d.getFullYear();
@@ -91,6 +94,12 @@ export function loadDailyStats(logDir: string, date: string): DailyStats | null 
 }
 
 export function saveDailyStats(logDir: string, stats: DailyStats): void {
+  if (!dailyStatsDirty) return;
+  saveDailyStatsForce(logDir, stats);
+}
+
+/** 无条件保存（用于 rollover 跨天保存旧数据） */
+function saveDailyStatsForce(logDir: string, stats: DailyStats): void {
   try {
     const dir = resolveStatsDir(logDir);
     mkdirSync(dir, { recursive: true });
@@ -109,9 +118,9 @@ export function rolloverDailyStats(logDir: string): void {
   const today = todayStr();
   if (dailyStats.date === today) return;
 
-  // 先持久化旧日期的数据
+  // 跨天：无条件保存旧日期数据（确保完整写入），然后重置
   if (dailyStats.date) {
-    saveDailyStats(logDir, dailyStats);
+    saveDailyStatsForce(logDir, dailyStats);
   }
 
   // 重置为新一天
@@ -127,6 +136,7 @@ export function rolloverDailyStats(logDir: string): void {
     dailyStats.errors = 0;
     dailyStats.protocols = {};
   }
+  dailyStatsDirty = false;
 }
 
 export function initDailyStats(logDir: string): void {
@@ -193,6 +203,7 @@ export interface RequestCompleteEvent {
  * 替代各 handler 中分散的 sessionStats.xxx++ / dailyStats.xxx++ / incrementProtocolStats() 调用
  */
 export function recordRequestComplete(event: RequestCompleteEvent): void {
+  dailyStatsDirty = true;
   const { protocol, inputTokens, outputTokens, success, retries } = event;
 
   // 集中更新 sessionStats

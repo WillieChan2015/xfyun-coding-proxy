@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { Command } from 'commander';
 
 // 从 package.json 读取版本号，避免硬编码
-const pkg = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8'));
+const pkg = JSON.parse(readFileSync(resolve(import.meta.dirname, '../package.json'), 'utf-8'));
 
 export interface CliOptions {
   port?: number;

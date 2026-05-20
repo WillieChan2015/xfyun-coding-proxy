@@ -20,7 +20,7 @@ export function readCache(cacheDir: string): CacheData | null {
     const raw = fs.readFileSync(filePath, 'utf-8');
     return JSON.parse(raw) as CacheData;
   } catch {
-    try { fs.unlinkSync(filePath); } catch {}
+    try { fs.unlinkSync(filePath); } catch { /* 损坏文件删除失败，忽略 */ }
     return null;
   }
 }
@@ -31,7 +31,7 @@ export function writeCache(cacheDir: string, data: CacheData): void {
   try {
     fs.mkdirSync(cacheDir, { recursive: true });
     fs.writeFileSync(filePath, JSON.stringify(data));
-  } catch {}
+  } catch { /* 缓存写入失败不影响主流程 */ }
 }
 
 /** 从 npm registry 获取最新版本号，超时或失败返回 null */
