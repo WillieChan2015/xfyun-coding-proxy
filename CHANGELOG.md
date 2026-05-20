@@ -10,6 +10,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added / 新增
+
+### Changed / 变更
+
+### Fixed / 修复
+
+## [0.0.7-beta.1] - 2026-05-20
+
 ### Changed / 变更
 
 - 迁移至 ESM 模块系统，移除 CJS 桥接层，统一使用 import/import.meta。
