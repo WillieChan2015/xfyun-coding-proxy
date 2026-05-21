@@ -16,6 +16,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed / 修复
 
+## [0.0.7-beta.2] - 2026-05-21
+
+### Added / 新增
+
+### Changed / 变更
+
+### Fixed / 修复
+
+- `saveDailyStatsForce` 采用读-改-写合并策略，先读取文件已有数据与内存数据按字段取较大值合并后再写入，防止并发或外部恢复数据被覆写丢失。
+- `saveDailyStatsForce` now uses read-merge-write strategy: reads existing file data, merges with in-memory data by taking the larger value per field, then writes — prevents data loss from concurrent writes or external recovery.
+- 保存后和初始化后清除 `dailyStatsDirty`，避免无请求时重复覆写已有持久化数据。
+- Clear `dailyStatsDirty` after saving and initialization to avoid redundant overwrites of existing persisted data when no requests occurred.
+- `resetDailyStats` 后置脏标记，确保重置操作能触发持久化。
+- Set `dailyStatsDirty` after `resetDailyStats` to ensure the reset triggers persistence.
+- `saveDailyStats` 仅对全局 `dailyStats` 使用脏标记守卫，外部传入的 stats 对象（如测试、rollover）无条件保存。
+- `saveDailyStats` only guards with the dirty flag for the global `dailyStats`; externally passed stats objects (e.g. tests, rollover) are saved unconditionally.
+
 ## [0.0.7-beta.1] - 2026-05-20
 
 ### Changed / 变更
