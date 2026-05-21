@@ -96,15 +96,53 @@ export function loadDailyStats(logDir: string, date: string): DailyStats | null 
 export function saveDailyStats(logDir: string, stats: DailyStats): void {
   if (!dailyStatsDirty) return;
   saveDailyStatsForce(logDir, stats);
+  dailyStatsDirty = false;
 }
 
-/** 无条件保存（用于 rollover 跨天保存旧数据） */
+/** 合并两组协议统计，各字段取较大值（防止多进程/外部恢复时覆写丢失数据） */
+function mergeProtocolStats(
+  a: Record<string, ProtocolStats>,
+  b: Record<string, ProtocolStats>,
+): Record<string, ProtocolStats> {
+  const result: Record<string, ProtocolStats> = {};
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const key of keys) {
+    const pa = a[key] ?? { requestCount: 0, totalPromptTokens: 0, totalCompletionTokens: 0, retries: 0, errors: 0 };
+    const pb = b[key] ?? { requestCount: 0, totalPromptTokens: 0, totalCompletionTokens: 0, retries: 0, errors: 0 };
+    result[key] = {
+      requestCount: Math.max(pa.requestCount, pb.requestCount),
+      totalPromptTokens: Math.max(pa.totalPromptTokens, pb.totalPromptTokens),
+      totalCompletionTokens: Math.max(pa.totalCompletionTokens, pb.totalCompletionTokens),
+      retries: Math.max(pa.retries, pb.retries),
+      errors: Math.max(pa.errors, pb.errors),
+    };
+  }
+  return result;
+}
+
+/** 合并两组每日统计，各数值字段取较大值 */
+function mergeDailyStats(a: DailyStats, b: DailyStats): DailyStats {
+  return {
+    date: a.date,
+    requestCount: Math.max(a.requestCount, b.requestCount),
+    totalPromptTokens: Math.max(a.totalPromptTokens, b.totalPromptTokens),
+    totalCompletionTokens: Math.max(a.totalCompletionTokens, b.totalCompletionTokens),
+    retries: Math.max(a.retries, b.retries),
+    errors: Math.max(a.errors, b.errors),
+    protocols: mergeProtocolStats(a.protocols, b.protocols),
+  };
+}
+
+/** 无条件保存，采用读-改-写：先读取文件已有数据，与内存数据合并后再写入 */
 function saveDailyStatsForce(logDir: string, stats: DailyStats): void {
   try {
     const dir = resolveStatsDir(logDir);
     mkdirSync(dir, { recursive: true });
     const file = resolveStatsFile(logDir, stats.date);
-    writeFileSync(file, JSON.stringify(stats, null, 2), 'utf-8');
+    // 读-改-写：合并文件中已有数据，防止多进程并发写入或外部恢复数据被覆写
+    const existing = loadDailyStats(logDir, stats.date);
+    const merged = existing ? mergeDailyStats(existing, stats) : stats;
+    writeFileSync(file, JSON.stringify(merged, null, 2), 'utf-8');
   } catch (err) {
     console.warn('Failed to save daily stats:', err);
   }
@@ -153,6 +191,7 @@ export function initDailyStats(logDir: string): void {
     dailyStats.errors = 0;
     dailyStats.protocols = {};
   }
+  dailyStatsDirty = false;
 }
 
 export function incrementProtocolStats(
@@ -378,6 +417,7 @@ export function resetDailyStats(): void {
   dailyStats.retries = 0;
   dailyStats.errors = 0;
   dailyStats.protocols = {};
+  dailyStatsDirty = true;
 }
 
 export function listStatsDates(logDir: string): string[] {

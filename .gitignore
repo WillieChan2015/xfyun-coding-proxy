@@ -25,3 +25,7 @@ logs/
 .github/docs/
 docs/superpowers/
 .claude/settings.json
+
+# temporary files
+temp/
+tmp/
