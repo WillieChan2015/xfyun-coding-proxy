@@ -94,7 +94,9 @@ export function loadDailyStats(logDir: string, date: string): DailyStats | null 
 }
 
 export function saveDailyStats(logDir: string, stats: DailyStats): void {
-  if (!dailyStatsDirty) return;
+  // 当传入的就是全局 dailyStats 时，用脏标记守卫避免无请求时覆写；
+  // 当传入外部 stats 对象时（如测试或 rollover），无条件保存
+  if (stats === dailyStats && !dailyStatsDirty) return;
   saveDailyStatsForce(logDir, stats);
   dailyStatsDirty = false;
 }
