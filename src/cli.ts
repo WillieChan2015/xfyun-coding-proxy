@@ -2,8 +2,15 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Command } from 'commander';
 
-// 从 package.json 读取版本号，避免硬编码
 const pkg = JSON.parse(readFileSync(resolve(import.meta.dirname, '../package.json'), 'utf-8'));
+
+export function getPackageVersion(): string {
+  return pkg.version;
+}
+
+export function getPackageName(): string {
+  return pkg.name;
+}
 
 export interface CliOptions {
   port?: number;
@@ -22,6 +29,7 @@ export interface CliOptions {
   setupNonInteractive?: boolean;
   setupRestoreList?: boolean;
   setupRestoreLatest?: boolean;
+  version?: string;
 }
 
 export function parseCli(): CliOptions {
@@ -65,6 +73,7 @@ export function parseCli(): CliOptions {
         monitor: opts.monitor,
         logDir: opts.logDir || undefined,
         config: opts.config || undefined,
+        version: pkg.version,
       };
     });
 

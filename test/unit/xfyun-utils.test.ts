@@ -43,12 +43,10 @@ describe('cleanXfyunFields', () => {
     expect(cleanXfyunFields('')).toBe('');
   });
 
-  it('known limitation: reasoning_content with escaped quotes may break regex', () => {
-    // 当前正则用 [^"]* 匹配值，含转义引号时会断裂
-    // 此测试记录已知边界，长期应改为 JSON.parse 方式
+  it('handles reasoning_content with escaped quotes', () => {
+    // JSON.parse 方式可以正确处理含转义引号的 reasoning_content 值
     const input = '{"role":"assistant","content":"hi","reasoning_content":"say \\"hello\\""}';
     const result = cleanXfyunFields(input);
-    // 当前实现无法正确清理含转义引号的情况，此处仅验证不抛错
-    expect(typeof result).toBe('string');
+    expect(result).toBe('{"role":"assistant","content":"hi"}');
   });
 });

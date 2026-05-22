@@ -22,6 +22,7 @@ export const configSchema = z.object({
   statsDir: z.string().min(1, 'statsDir is required'),
   statsFlushInterval: z.number().int().min(0, 'statsFlushInterval must be >= 0'),
   streamReadTimeout: z.number().int().min(1_000, 'streamReadTimeout must be >= 1000').max(300_000, 'streamReadTimeout must be <= 300000'),
+  upstreamFetchTimeout: z.number().int().min(30_000, 'upstreamFetchTimeout must be >= 30000').max(600_000, 'upstreamFetchTimeout must be <= 600000'),
   configFile: z.string().optional(),
 });
 
@@ -44,6 +45,7 @@ export let config: ResolvedConfig = {
   statsDir: './logs/stats',
   statsFlushInterval: 60_000,
   streamReadTimeout: 60_000,
+  upstreamFetchTimeout: 300_000,
   configFile: undefined,
 };
 
@@ -123,6 +125,7 @@ export function loadConfig(cliOpts: CliOptions): ResolvedConfig {
     statsDir: join(resolveLogDir(cliOpts.logDir), 'stats'),
     statsFlushInterval: parseInt(process.env.STATS_FLUSH_INTERVAL_MS || '60000', 10),
     streamReadTimeout: parseInt(process.env.STREAM_READ_TIMEOUT_MS || '60000', 10),
+    upstreamFetchTimeout: parseInt(process.env.UPSTREAM_FETCH_TIMEOUT_MS || '300000', 10),
     configFile: envFile,
   };
 

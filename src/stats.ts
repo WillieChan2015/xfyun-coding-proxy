@@ -1,5 +1,6 @@
 import { fmtTokens } from './util';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { EventEmitter } from 'events';
 
@@ -129,12 +130,45 @@ export function loadDailyStats(logDir: string, date: string): DailyStats | null 
   }
 }
 
+export async function loadDailyStatsAsync(logDir: string, date: string): Promise<DailyStats | null> {
+  const file = resolveStatsFile(logDir, date);
+  try {
+    const content = await readFile(file, 'utf-8');
+    const parsed = JSON.parse(content);
+    if (
+      typeof parsed.date === 'string' &&
+      typeof parsed.requestCount === 'number' &&
+      typeof parsed.totalPromptTokens === 'number' &&
+      typeof parsed.totalCompletionTokens === 'number' &&
+      typeof parsed.retries === 'number' &&
+      typeof parsed.errors === 'number'
+    ) {
+      if (!parsed.protocols) {
+        parsed.protocols = {};
+      }
+      return parsed as DailyStats;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function saveDailyStats(logDir: string, stats: DailyStats): void {
   // 当传入的就是全局 dailyStats 时，用脏标记守卫避免无请求时覆写；
   // 当传入外部 stats 对象时（如测试或 rollover），无条件保存
   if (stats === dailyStats && !dailyStatsDirty) return;
   saveDailyStatsForce(logDir, stats);
-  dailyStatsDirty = false;
+  // 同步保存完成后清除脏标记（同步场景不存在并发修改竞态）
+  if (stats === dailyStats) dailyStatsDirty = false;
+}
+
+export async function saveDailyStatsAsync(logDir: string, stats: DailyStats): Promise<void> {
+  if (stats === dailyStats && !dailyStatsDirty) return;
+  await saveDailyStatsForceAsync(logDir, stats);
+  // 异步保存完成后不清除脏标记：
+  // await 期间可能有新请求将 dirty 重置为 true，无条件清除会丢失这些更新；
+  // dirty 标记保留到下次定时刷盘，确保新增数据不会遗漏
 }
 
 /** 合并两组协议统计，各字段取较大值（防止多进程/外部恢复时覆写丢失数据） */
@@ -181,6 +215,20 @@ function saveDailyStatsForce(logDir: string, stats: DailyStats): void {
     const existing = loadDailyStats(logDir, stats.date);
     const merged = existing ? mergeDailyStats(existing, stats) : stats;
     writeFileSync(file, JSON.stringify(merged, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('Failed to save daily stats:', err);
+  }
+}
+
+/** 异步版本：避免在请求热路径或定时刷盘中阻塞事件循环 */
+async function saveDailyStatsForceAsync(logDir: string, stats: DailyStats): Promise<void> {
+  try {
+    const dir = resolveStatsDir(logDir);
+    await mkdir(dir, { recursive: true });
+    const file = resolveStatsFile(logDir, stats.date);
+    const existing = await loadDailyStatsAsync(logDir, stats.date);
+    const merged = existing ? mergeDailyStats(existing, stats) : stats;
+    await writeFile(file, JSON.stringify(merged, null, 2), 'utf-8');
   } catch (err) {
     console.warn('Failed to save daily stats:', err);
   }
@@ -278,13 +326,23 @@ export interface RequestCompleteEvent {
 // 由 server.ts 在启动时通过 setRolloverFn / setSaveFn 注入，避免 stats 模块需要感知 logDir
 let rolloverFn: (() => void) | null = null;
 let saveFn: ((stats: DailyStats) => void) | null = null;
+let rolloverFnSet = false;
+let saveFnSet = false;
 
 export function setRolloverFn(fn: (() => void) | null): void {
+  if (rolloverFnSet && fn !== null) {
+    console.warn('setRolloverFn: rolloverFn already set, overwriting');
+  }
   rolloverFn = fn;
+  rolloverFnSet = true;
 }
 
 export function setSaveFn(fn: ((stats: DailyStats) => void) | null): void {
+  if (saveFnSet && fn !== null) {
+    console.warn('setSaveFn: saveFn already set, overwriting');
+  }
   saveFn = fn;
+  saveFnSet = true;
 }
 
 /**

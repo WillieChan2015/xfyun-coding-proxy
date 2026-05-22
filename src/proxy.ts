@@ -2,15 +2,20 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import { formatOpenAIError } from './errors';
 import { config, DEFAULT_MODEL } from './config';
 import { recordRequestComplete, requestStarted, requestFinished, Protocol } from './stats';
+import { readBodyWithLimit, extractUpstreamHeaders } from './util';
 import {
   upstreamRequest,
   extractStreamUsage,
   buildUpstreamUrl,
   summarizeContentTypes,
   summarizeRequestDiagnostics,
+  cleanXfyunFieldsObj,
+  fetchWithRetry,
 } from './upstream';
 import type { UpstreamResult } from './upstream';
 import type { RequestDiagnostics } from './upstream';
+
+const ALLOWED_UPSTREAM_HEADERS = ['x-request-id', 'x-correlation-id'];
 
 /** 流式错误时通过 raw.write 写入的 SSE 错误事件格式 */
 function formatStreamErrorEvent(errMsg: string): string {
@@ -56,6 +61,7 @@ export {
   SSEFilter,
   filterSSEEvents,
   cleanXfyunFields,
+  cleanXfyunFieldsObj,
   fetchWithRetry,
   RETRYABLE_STATUS_CODES,
   RETRYABLE_XFYUN_CODES,
@@ -105,31 +111,16 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
   // 仅转发白名单 headers，其余丢弃
   // 原因：部分 IDE（如 Trae）会添加 destination-domain 等非标准 header，
   // 讯飞服务端会因 header 值不符合 RFC1035 而返回 400
-  const ALLOWED_UPSTREAM_HEADERS = new Set(['x-request-id', 'x-correlation-id']);
 
   // 构建上游请求 headers：注入 API Key，替换客户端传入的 Authorization
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${config.apiKey}`,
+    ...extractUpstreamHeaders(request.headers, ALLOWED_UPSTREAM_HEADERS),
   };
 
-  // 从客户端 headers 中提取白名单项
-  for (const [key, value] of Object.entries(request.headers)) {
-    const lower = key.toLowerCase();
-    if (ALLOWED_UPSTREAM_HEADERS.has(lower) && typeof value === 'string') {
-      headers[key] = value;
-    }
-  }
-
-  if (isStream) {
-    reply.raw.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
-    });
-  }
-
+  // 流式响应头延迟写入：不再提前 writeHead(200)，
+  // 由 upstreamRequest 在确认上游 2xx 且有 body 后调用 rawReply.writeHeader
   const result: UpstreamResult = await upstreamRequest({
     protocol: protocol as Protocol,
     upstreamUrl,
@@ -147,27 +138,21 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
       return {};
     },
     cleanNonStreamBody: (responseBody: Record<string, unknown>) => {
-      const choices = responseBody.choices as Array<Record<string, unknown>> | undefined;
-      if (choices) {
-        for (const choice of choices) {
-          const message = choice.message as Record<string, unknown> | undefined;
-          if (message) {
-            delete message.plugins_content;
-            delete message.reasoning_content;
-          }
-        }
-      }
+      cleanXfyunFieldsObj(responseBody);
       return responseBody;
     },
     formatStreamErrorEvent,
     request: { id: request.id, url: request.url, headers: request.headers, log: request.log },
-    rawReply: { write: (data) => reply.raw.write(data), end: () => reply.raw.end() },
+    rawReply: {
+      write: (data) => reply.raw.write(data),
+      end: () => reply.raw.end(),
+      writeHeader: (statusCode, hdrs) => reply.raw.writeHead(statusCode, hdrs),
+    },
     diagnostics: diag,
   });
 
   // Handle result based on errorType
-  // 流式请求中 writeHead(200) 已发送，错误分支必须通过 raw.write + raw.end 发送 SSE 错误事件，
-  // 不能调用 reply.status().send()（会触发 ERR_HTTP_HEADERS_SENT）
+  // upstreamRequest 已延迟 writeHead，错误分支可直接用 reply.status().send()
   if (result.errorType === 'network') {
     if (reply.raw.headersSent) {
       reply.raw.write(formatStreamErrorEvent(`upstream request failed: ${result.error}`));
@@ -235,7 +220,6 @@ export async function handleGetProxy(
 ): Promise<void> {
   requestStarted();
   const ua = request.headers['user-agent'] ?? 'unknown';
-  // 根据请求路径前缀判断协议归属：/ollama/ 开头的请求归入 ollama，其余归入 openai
   const protocol = request.url.startsWith('/ollama/') ? 'ollama' : 'openai';
   const upstreamUrl = buildUpstreamUrl(request.url);
 
@@ -245,32 +229,60 @@ export async function handleGetProxy(
 
   const startTime = Date.now();
 
-  const response = await fetch(upstreamUrl, {
-    method: 'GET',
-    headers,
-    signal: AbortSignal.timeout(30_000),
-  });
+  try {
+    const { response, retries } = await fetchWithRetry(
+      upstreamUrl,
+      { method: 'GET', headers },
+      config.maxRetries,
+      config.retryDelay,
+      true,
+      request.log,
+    );
 
-  const body = await response.text();
-  const latencyMs = Date.now() - startTime;
+    const body = await readBodyWithLimit(response);
+    const latencyMs = Date.now() - startTime;
 
-  request.log.info(`GET proxied | ${response.status} | ${request.url}`);
+    request.log.info(`GET proxied | ${response.status} | ${request.url}`);
 
-  reply.status(response.status);
-  reply.header('Content-Type', response.headers.get('content-type') || 'application/json');
-  reply.send(body);
-  recordRequestComplete({
-    protocol: protocol as 'openai' | 'anthropic' | 'ollama',
-    model: 'unknown',
-    inputTokens: 0,
-    outputTokens: 0,
-    latencyMs,
-    success: true,
-    stream: false,
-    requestId: request.id,
-    path: request.url,
-    ua,
-    retries: 0,
-  });
-  requestFinished();
+    reply.status(response.status);
+    reply.header('Content-Type', response.headers.get('content-type') || 'application/json');
+    reply.send(body);
+    recordRequestComplete({
+      protocol: protocol as 'openai' | 'anthropic' | 'ollama',
+      model: 'unknown',
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs,
+      success: true,
+      stream: false,
+      requestId: request.id,
+      path: request.url,
+      ua,
+      retries,
+    });
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    const latencyMs = Date.now() - startTime;
+    request.log.error(`GET proxy error | ${request.url} | ${errMsg}`);
+
+    if (!reply.raw.headersSent) {
+      reply.status(502).send(formatOpenAIError(502, `upstream request failed: ${errMsg}`));
+    }
+    recordRequestComplete({
+      protocol: protocol as 'openai' | 'anthropic' | 'ollama',
+      model: 'unknown',
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs,
+      success: false,
+      stream: false,
+      requestId: request.id,
+      path: request.url,
+      ua,
+      retries: 0,
+      error: errMsg,
+    });
+  } finally {
+    requestFinished();
+  }
 }

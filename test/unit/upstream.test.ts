@@ -10,21 +10,38 @@ const mockLog = {
   error: vi.fn(),
 };
 
+function mockFetch(fn: () => Promise<Response> | never): typeof globalThis.fetch {
+  return vi.fn(fn) as unknown as typeof globalThis.fetch;
+}
+
 function createMockRequest() {
   return {
     id: 'test-req-1',
     url: '/v1/chat/completions',
     headers: { 'user-agent': 'test-client' },
-    log: mockLog,
+    log: {
+      debug: mockLog.debug,
+      info: mockLog.info,
+      warn: mockLog.warn,
+      error: mockLog.error,
+      fatal: mockLog.error,
+      trace: mockLog.debug,
+      silent: vi.fn(),
+      child: () => createMockRequest().log,
+      level: 'info',
+    } as unknown as import('fastify').FastifyInstance['log'],
   };
 }
 
 function createMockRawReply() {
-  const state = { ended: false };
+  const state = { ended: false, headersSent: false };
   const writtenChunks: string[] = [];
+  const writtenHeaders: { statusCode: number; headers: Record<string, string> }[] = [];
   return {
     writtenChunks,
+    writtenHeaders,
     get ended() { return state.ended; },
+    get headersSent() { return state.headersSent; },
     rawReply: {
       write: (data: string | Buffer) => {
         writtenChunks.push(String(data));
@@ -32,6 +49,10 @@ function createMockRawReply() {
       },
       end: () => {
         state.ended = true;
+      },
+      writeHeader: (statusCode: number, headers: Record<string, string>) => {
+        state.headersSent = true;
+        writtenHeaders.push({ statusCode, headers });
       },
     },
   };
@@ -46,44 +67,30 @@ function createBaseOptions(
     upstreamUrl: 'https://maas-coding-api.cn-huabei-1.xf-yun.com/v2/chat/completions',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-key' },
     body: { model: 'test-model', messages: [{ role: 'user', content: 'hello' }] },
-    isStream: overrides.isStream,
-    formatNetworkError: (errMsg: string) => ({
-      status: 502,
-      body: { error: { message: errMsg, type: 'network_error', code: 502 } },
-    }),
-    formatUpstreamError: (status: number, body: string) => ({
-      status,
-      body: { error: { message: body, type: 'upstream_error', code: status } },
-    }),
-    formatEmptyBodyError: (status: number) => ({
-      status,
-      body: { error: { message: 'empty response body', type: 'empty_body_error', code: status } },
-    }),
-    formatNoStreamBodyError: (status: number) => ({
-      status,
-      body: { error: { message: 'no stream body', type: 'no_stream_body_error', code: status } },
-    }),
     formatStreamErrorEvent: (errMsg: string) =>
       `event: error\ndata: {"error":{"message":"${errMsg}"}}\n\n`,
     request: createMockRequest(),
-    rawReply: overrides.rawReply ?? mockRawReplyHelper.rawReply,
+    rawReply: mockRawReplyHelper.rawReply,
     ...overrides,
   };
 }
 
-let originalFetch: typeof globalThis.fetch;
+let originalFetch: typeof globalThis.fetch | undefined;
 let originalMaxRetries: number;
 let originalRetryDelay: number;
 let originalApiKey: string;
+let originalUpstreamFetchTimeout: number;
 
 beforeEach(() => {
   originalFetch = globalThis.fetch;
   originalMaxRetries = config.maxRetries;
   originalRetryDelay = config.retryDelay;
   originalApiKey = config.apiKey;
+  originalUpstreamFetchTimeout = config.upstreamFetchTimeout;
   config.maxRetries = 0;
   config.retryDelay = 0;
   config.apiKey = 'test-api-key';
+  config.upstreamFetchTimeout = 300_000;
   mockLog.debug.mockClear();
   mockLog.info.mockClear();
   mockLog.warn.mockClear();
@@ -91,10 +98,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  globalThis.fetch = originalFetch;
+  globalThis.fetch = originalFetch!;
   config.maxRetries = originalMaxRetries;
   config.retryDelay = originalRetryDelay;
   config.apiKey = originalApiKey;
+  config.upstreamFetchTimeout = originalUpstreamFetchTimeout;
   sessionStats.protocols = {};
   resetDailyStats();
 });
@@ -109,7 +117,7 @@ describe('upstreamRequest', () => {
       usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
     };
 
-    globalThis.fetch = vi.fn(() =>
+    globalThis.fetch = mockFetch(() =>
       Promise.resolve(
         new Response(JSON.stringify(responseBody), {
           status: 200,
@@ -138,7 +146,7 @@ describe('upstreamRequest', () => {
       error: { message: 'Invalid request', type: 'invalid_request_error', code: 'invalid_api_key' },
     };
 
-    globalThis.fetch = vi.fn(() =>
+    globalThis.fetch = mockFetch(() =>
       Promise.resolve(
         new Response(JSON.stringify(errorBody), {
           status: 400,
@@ -159,7 +167,7 @@ describe('upstreamRequest', () => {
   });
 
   it('scenario 3: network error', async () => {
-    globalThis.fetch = vi.fn(() => {
+    globalThis.fetch = mockFetch(() => {
       throw new Error('DNS resolution failed: getaddrinfo ENOTFOUND maas-coding-api');
     });
 
@@ -175,7 +183,7 @@ describe('upstreamRequest', () => {
   });
 
   it('scenario 4: non-stream empty body error', async () => {
-    globalThis.fetch = vi.fn(() =>
+    globalThis.fetch = mockFetch(() =>
       Promise.resolve(
         new Response('', {
           status: 502,
@@ -209,7 +217,7 @@ describe('upstreamRequest', () => {
       },
     });
 
-    globalThis.fetch = vi.fn(() =>
+    globalThis.fetch = mockFetch(() =>
       Promise.resolve(
         new Response(stream, {
           status: 200,
@@ -246,7 +254,7 @@ describe('upstreamRequest', () => {
       },
     });
 
-    globalThis.fetch = vi.fn(() =>
+    globalThis.fetch = mockFetch(() =>
       Promise.resolve(
         new Response(stream, {
           status: 200,

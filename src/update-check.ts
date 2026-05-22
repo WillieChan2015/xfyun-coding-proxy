@@ -98,7 +98,10 @@ export function formatUpdateMessage(current: string, latest: string, isTTY: bool
 export function isNewerVersion(current: string, remote: string): boolean {
   const parse = (v: string): { parts: number[]; pre: string[] | null } => {
     const [main, preStr] = v.split('-');
-    const parts = main.split('.').map(Number);
+    const parts = main.split('.').map((s) => {
+      const n = Number(s);
+      return isNaN(n) ? 0 : n;
+    });
     const pre = preStr ? preStr.split('.') : null;
     return { parts, pre };
   };

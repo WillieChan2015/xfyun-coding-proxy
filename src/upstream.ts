@@ -7,7 +7,7 @@
 
 import { FastifyInstance } from 'fastify';
 import { config, DEFAULT_MODEL } from './config';
-import { readWithTimeout } from './util';
+import { readWithTimeout, readBodyWithLimit } from './util';
 import { extractTokenUsage, fmtTokens } from './util';
 import { rolloverDailyStats, recordRequestComplete, recordRequestStart, requestStarted, requestFinished, streamingStarted, streamingFinished, Protocol } from './stats';
 
@@ -161,6 +161,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// 退避上限：即使 maxRetries 很大，单次退避不超过 30s
+const MAX_BACKOFF_MS = 30_000;
+
+function calcBackoff(delayMs: number, attempt: number): number {
+  const base = Math.min(delayMs * Math.pow(2, attempt), MAX_BACKOFF_MS);
+  return base + Math.random() * base * 0.3;
+}
+
 /**
  * 从 SSE rawChunk 中提取 token 用量
  * 支持两种格式：
@@ -171,6 +179,11 @@ function sleep(ms: number): Promise<void> {
  * 因此用全局匹配取最后一个非零结果。
  */
 export function extractStreamUsage(rawChunk: string): { promptTokens?: number; completionTokens?: number; totalTokens?: number } {
+  // 快速判断：如果 chunk 不包含任何 usage 相关字段，跳过正则匹配
+  if (!rawChunk.includes('"prompt_tokens"') && !rawChunk.includes('"tokens"')) {
+    return {};
+  }
+
   // 标准格式：全局匹配所有 prompt_tokens+completion_tokens 对，取最后一个非零值
   const usageRegex = /"prompt_tokens":\s*(\d+).*?"completion_tokens":\s*(\d+)/g;
   let lastPt: number | undefined;
@@ -234,6 +247,23 @@ export function buildUpstreamUrl(path: string): string {
 export const ALLOWED_SSE_EVENTS = new Set(['message']);
 
 /**
+ * 解析 SSE 行前缀，提取字段名和值
+ *
+ * SSE 规范中冒号后的空格是可选的：
+ *   "data:content" 和 "data: content" 都合法
+ *   "event:message" 和 "event: message" 都合法
+ * 返回 { field, value } 或 null（非 SSE 行）
+ */
+export function parseSSELine(line: string): { field: string; value: string } | null {
+  const colonIdx = line.indexOf(':');
+  if (colonIdx === -1) return null;
+  const field = line.slice(0, colonIdx);
+  // 冒号后第一个空格可选，跳过它
+  const valueStart = colonIdx + 1 + (line[colonIdx + 1] === ' ' ? 1 : 0);
+  return { field, value: line.slice(valueStart) };
+}
+
+/**
  * 有状态的 SSE 事件过滤器（白名单策略）
  *
  * 只转发 ALLOWED_SSE_EVENTS 中的事件类型（"message"）和无 event: 行的默认事件。
@@ -275,11 +305,11 @@ export class SSEFilter {
     const outputLines: string[] = [];
 
     for (const line of lines) {
-      if (line.startsWith('event:')) {
-        const eventType = line.slice(6).trim();
-        this.skipCurrentEvent = !this.allowedEvents.has(eventType);
+      const parsed = parseSSELine(line);
+      if (parsed?.field === 'event') {
+        this.skipCurrentEvent = !this.allowedEvents.has(parsed.value);
         if (this.skipCurrentEvent) {
-          log.debug(`filtered SSE event: ${eventType}`);
+          log.debug(`filtered SSE event: ${parsed.value}`);
           continue;
         }
       }
@@ -310,12 +340,80 @@ export function filterSSEEvents(rawChunk: string, log: FastifyInstance['log']): 
 /**
  * 清理讯飞特有字段：reasoning_content 和 plugins_content
  * ai-sdk/openai-compatible 的 Zod schema 不认识这些字段，可能导致验证失败
+ *
+ * 支持两种输入格式：
+ * 1. SSE 格式（data: {...}\n）— 实际运行时的流式 chunk
+ * 2. 纯 JSON 字符串（{...}）— 非流式场景或测试用例
+ *
+ * 对每行尝试 JSON.parse → delete → JSON.stringify，
+ * 解析失败的行保持原样（如 [DONE]），避免正则替换对转义引号和合法内容的误删
  */
 export function cleanXfyunFields(chunk: string): string {
-  return chunk
-    .replace(/,"reasoning_content"\s*:\s*"[^"]*"/g, '')
-    .replace(/"reasoning_content"\s*:\s*"[^"]*",?/g, '')
-    .replace(/,"plugins_content"\s*:\s*null/g, '');
+  if (!chunk.includes('reasoning_content') && !chunk.includes('plugins_content')) {
+    return chunk;
+  }
+
+  const lines = chunk.split('\n');
+  const result: string[] = [];
+
+  for (const line of lines) {
+    const parsed = parseSSELine(line);
+    if (parsed?.field === 'data') {
+      if (parsed.value === '[DONE]') {
+        result.push(line);
+        continue;
+      }
+      const cleaned = cleanXfyunJsonObj(parsed.value);
+      result.push(cleaned !== null ? `data: ${cleaned}` : line);
+    } else if (line.startsWith('{')) {
+      const cleaned = cleanXfyunJsonObj(line);
+      result.push(cleaned !== null ? cleaned : line);
+    } else {
+      result.push(line);
+    }
+  }
+
+  return result.join('\n');
+}
+
+/** 尝试 JSON.parse 清理讯飞字段，返回 JSON.stringify 结果；解析失败返回 null */
+function cleanXfyunJsonObj(jsonStr: string): string | null {
+  try {
+    const obj = JSON.parse(jsonStr) as Record<string, unknown>;
+    if (cleanXfyunFieldsObj(obj)) {
+      return JSON.stringify(obj);
+    }
+    return jsonStr;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 直接在对象上清理讯飞特有字段（reasoning_content、plugins_content）
+ * 避免多余的 JSON.stringify → cleanXfyunFields → JSON.parse 往返
+ * @returns 对象是否被修改
+ */
+export function cleanXfyunFieldsObj(obj: Record<string, unknown>): boolean {
+  let modified = false;
+  if ('reasoning_content' in obj) { delete obj.reasoning_content; modified = true; }
+  if ('plugins_content' in obj) { delete obj.plugins_content; modified = true; }
+  const choices = obj.choices as Array<Record<string, unknown>> | undefined;
+  if (Array.isArray(choices)) {
+    for (const choice of choices) {
+      const delta = choice.delta as Record<string, unknown> | undefined;
+      if (delta) {
+        if ('reasoning_content' in delta) { delete delta.reasoning_content; modified = true; }
+        if ('plugins_content' in delta) { delete delta.plugins_content; modified = true; }
+      }
+      const message = choice.message as Record<string, unknown> | undefined;
+      if (message) {
+        if ('reasoning_content' in message) { delete message.reasoning_content; modified = true; }
+        if ('plugins_content' in message) { delete message.plugins_content; modified = true; }
+      }
+    }
+  }
+  return modified;
 }
 
 /**
@@ -328,7 +426,7 @@ export function cleanXfyunFields(chunk: string): string {
  *
  * 重试策略：指数退避，初始延迟 delayMs，每次翻倍，最多 maxRetries 次
  * 重试条件：
- *   - HTTP 429 / 503（readBody=true 或 false 均生效）
+ *   - HTTP 429 / 500 / 503（readBody=true 或 false 均生效）
  *   - 响应体包含讯飞错误码 10012（仅 readBody=true 时检测）
  *   - 网络层异常（fetch 抛错，如连接超时、DNS 失败）
  */
@@ -345,15 +443,17 @@ export async function fetchWithRetry(
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      // 上游 fetch 超时 120s，避免讯飞侧挂住后本地 socket 被无限占用
+      // 上游 fetch 超时：避免讯飞侧挂住后本地 socket 被无限占用
+      // 注意：此超时从 fetch 调用时刻开始计算（绝对时间），流式长请求可能持续超过此时间；
+      // 对于流式请求，实际空闲检测由 streamReadTimeout 负责
       const response = await fetch(url, {
         ...options,
-        signal: AbortSignal.timeout(120_000),
+        signal: AbortSignal.timeout(config.upstreamFetchTimeout),
       });
 
       if (readBody) {
-        // 非流式：读取完整 body，可检测讯飞业务层错误码
-        const body = await response.text();
+        // 非流式：带大小限制读取 body，防止上游异常返回超大响应导致 OOM
+        const body = await readBodyWithLimit(response);
 
         // 判断是否需要重试：HTTP 状态码 或 讯飞业务错误码
         // 注意：讯飞可能用 10012 表示"不支持的 content type"并返回 HTTP 400，
@@ -389,13 +489,13 @@ export async function fetchWithRetry(
           };
         }
 
-        // 指数退避等待后重试
-        const backoff = delayMs * Math.pow(2, attempt);
+        // 指数退避 + jitter 等待后重试（jitter 避免多客户端同时 429 时产生惊群效应）
+        const backoff = calcBackoff(delayMs, attempt);
         const xfyunErr = extractXfyunError(body);
         const reason = RETRYABLE_STATUS_CODES.has(response.status)
           ? `HTTP ${response.status}`
           : `xfyun_code=${xfyunErr?.code} msg=${xfyunErr?.msg} sid=${xfyunErr?.sid ?? 'n/a'}`;
-        log.warn(`${reason} on attempt ${attempt + 1}, retrying in ${backoff}ms...`);
+        log.warn(`${reason} on attempt ${attempt + 1}, retrying in ${Math.round(backoff)}ms...`);
         await sleep(backoff);
         retries++;
         log.debug(`retry #${retries} sending request to ${url} (readBody=${readBody})`);
@@ -410,9 +510,11 @@ export async function fetchWithRetry(
           return { response, body: null, retries };
         }
 
-        // 指数退避等待后重试
-        const backoff = delayMs * Math.pow(2, attempt);
-        log.warn(`HTTP ${response.status} on attempt ${attempt + 1}, retrying in ${backoff}ms...`);
+        // 指数退避 + jitter 等待后重试
+        const backoff = calcBackoff(delayMs, attempt);
+        // 流式重试前释放未消费的 response.body，避免高并发下内存压力
+        try { await response.body?.cancel(); } catch { /* cancel 失败不影响重试 */ }
+        log.warn(`HTTP ${response.status} on attempt ${attempt + 1}, retrying in ${Math.round(backoff)}ms...`);
         await sleep(backoff);
         retries++;
         log.debug(`retry #${retries} sending request to ${url} (readBody=${readBody})`);
@@ -425,9 +527,9 @@ export async function fetchWithRetry(
         throw lastError;
       }
 
-      const backoff = delayMs * Math.pow(2, attempt);
+      const backoff = calcBackoff(delayMs, attempt);
       log.warn(
-        `network error on attempt ${attempt + 1}: ${lastError.message}, retrying in ${backoff}ms...`,
+        `network error on attempt ${attempt + 1}: ${lastError.message}, retrying in ${Math.round(backoff)}ms...`,
       );
       await sleep(backoff);
       retries++;
@@ -446,6 +548,8 @@ export interface UpstreamOptions {
   headers: Record<string, string>;
   body: Record<string, unknown> | undefined;
   isStream: boolean;
+  /** 流式请求确认上游 2xx 后写入的响应头，由各 handler 传入协议特定的 Content-Type 等 */
+  streamHeaders?: Record<string, string>;
   allowedSSEEvents?: Set<string>;
   extractStreamUsage?: (rawChunk: string) => { inputTokens?: number; outputTokens?: number };
   extractNonStreamUsage?: (body: Record<string, unknown>) => { promptTokens?: number; completionTokens?: number };
@@ -455,7 +559,7 @@ export interface UpstreamOptions {
   streamTransform?: (cleanedChunk: string) => string[];
   formatStreamErrorEvent: (errMsg: string) => string;
   request: { id: string; url: string; headers: Record<string, string | string[] | undefined>; log: FastifyInstance['log'] };
-  rawReply: { write: (data: string | Buffer) => boolean; end: () => void };
+  rawReply: { write: (data: string | Buffer) => boolean; end: () => void; writeHeader: (statusCode: number, headers: Record<string, string>) => void };
   diagnostics?: RequestDiagnostics;
 }
 
@@ -503,6 +607,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
     headers,
     body,
     isStream,
+    streamHeaders,
     allowedSSEEvents,
     extractStreamUsage: extractStreamUsageFn,
     extractNonStreamUsage: extractNonStreamUsageFn,
@@ -589,7 +694,9 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
     };
   }
 
-  const durationMs = Date.now() - startTime;
+  // 注意：此值在 fetchWithRetry 返回后计算，对于流式请求仅反映首字节延迟；
+  // 流式 SSE 循环结束后会重新计算以覆盖完整耗时
+  let durationMs = Date.now() - startTime;
 
   // ---- 处理响应 ----
 
@@ -706,8 +813,62 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
     };
   }
 
-  // 流式请求：解析 SSE 事件，过滤非标准事件，实时透传
+  // 流式请求上游返回非 2xx 但有 body：读取错误 body 后返回错误，不进入流式循环
+  if (isStream && !response.ok && response.body) {
+    let errorBodyText: string | null = null;
+    try {
+      errorBodyText = await readBodyWithLimit(response);
+    } catch {
+      // body 读取失败，用 null errorBody 返回
+    }
+    const xfyunErr = errorBodyText ? extractXfyunError(errorBodyText) : null;
+    const errDetail = xfyunErr ? ` | xfyun_code=${xfyunErr.code} msg=${xfyunErr.msg} sid=${xfyunErr.sid ?? 'n/a'}` : '';
+    const diagStr = diagnostics ? ` | diag=${JSON.stringify(diagnostics)}` : '';
+    reqInfo.log.error(
+      `stream upstream error | ${response.status} | ${durationMs}ms | retries=${retries}${errDetail}${diagStr} | body=${(errorBodyText ?? '').slice(0, 300)}`,
+    );
+
+    recordRequestComplete({
+      protocol,
+      model,
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: durationMs,
+      success: false,
+      stream: isStream,
+      requestId: reqId,
+      path: reqPath,
+      ua,
+      retries,
+      error: `HTTP ${response.status}`,
+    });
+    requestFinished();
+
+    return {
+      responseBody: null,
+      errorBody: errorBodyText,
+      status: response.status,
+      retries,
+      success: false,
+      errorType: 'upstream',
+      error: `HTTP ${response.status}`,
+      inputTokens: 0,
+      outputTokens: 0,
+      durationMs,
+    };
+  }
+
+  // 流式请求：确认上游 2xx 且有 body，写入流式响应头后开始 SSE 循环
   if (isStream && response.body) {
+    // 延迟写入流式响应头：只有确认上游返回 2xx 且有 body 后才 writeHead，
+    // 否则上游错误时可以正确透传 HTTP 状态码给客户端
+    const hdrs = streamHeaders ?? {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    };
+    rawReply.writeHeader(200, hdrs);
     streamingStarted();
 
     const reader = response.body!.getReader() as ReadableStreamDefaultReader<Uint8Array>;
@@ -734,7 +895,8 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
           rawReply.write(cleaned);
         }
 
-        if (isRetryableXfyunError(rawChunk)) {
+        const isRetryable = isRetryableXfyunError(rawChunk);
+        if (isRetryable) {
           const xfyunErr = extractXfyunError(rawChunk);
           const errDetail = xfyunErr ? `code=${xfyunErr.code} msg=${xfyunErr.msg} sid=${xfyunErr.sid ?? 'n/a'}` : 'unknown';
           streamError = errDetail;
@@ -744,7 +906,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
           break;
         }
 
-        if (!isRetryableXfyunError(rawChunk) && rawChunk.includes('"error"')) {
+        if (!isRetryable && rawChunk.includes('"error"')) {
           const xfyunErr = extractXfyunError(rawChunk);
           if (xfyunErr) {
             streamError = `code=${xfyunErr.code} msg=${xfyunErr.msg} sid=${xfyunErr.sid ?? 'n/a'}`;
@@ -778,6 +940,9 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       try { rawReply.end(); } catch { /* client already closed */ }
       streamingFinished();
     }
+
+    // 流式 SSE 循环已结束，重新计算完整耗时（含所有 chunk 的读取和透传）
+    durationMs = Date.now() - startTime;
 
     requestFinished();
 

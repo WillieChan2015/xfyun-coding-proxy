@@ -1,10 +1,13 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { config, DEFAULT_MODEL } from '../config';
-import { upstreamRequest, cleanXfyunFields, summarizeRequestDiagnostics } from '../upstream';
+import { upstreamRequest, cleanXfyunFieldsObj, summarizeRequestDiagnostics } from '../upstream';
 import { formatAnthropicError } from '../errors';
+import { extractUpstreamHeaders } from '../util';
 import { ANTHROPIC_SSE_EVENTS } from './types';
 import type { AnthropicUsage } from './types';
 import type { UpstreamResult, RequestDiagnostics } from '../upstream';
+
+const ALLOWED_UPSTREAM_HEADERS = ['x-request-id', 'x-correlation-id', 'anthropic-beta'];
 
 /** 流式错误时通过 raw.write 写入的 Anthropic SSE 错误事件格式 */
 function formatStreamErrorEvent(errMsg: string): string {
@@ -125,34 +128,16 @@ export async function handleAnthropicMessages(
 
   // Anthropic 认证头：x-api-key + anthropic-version
   // 透传客户端的 anthropic-beta 头（如有）
-  const ALLOWED_UPSTREAM_HEADERS = new Set([
-    'x-request-id',
-    'x-correlation-id',
-    'anthropic-beta',
-  ]);
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'x-api-key': config.apiKey,
     'anthropic-version': '2023-06-01',
+    ...extractUpstreamHeaders(request.headers, ALLOWED_UPSTREAM_HEADERS),
   };
 
-  for (const [key, value] of Object.entries(request.headers)) {
-    const lower = key.toLowerCase();
-    if (ALLOWED_UPSTREAM_HEADERS.has(lower) && typeof value === 'string') {
-      headers[key] = value;
-    }
-  }
-
-  if (isStream) {
-    reply.raw.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
-    });
-  }
-
+  // 流式响应头延迟写入：不再提前 writeHead(200)，
+  // 由 upstreamRequest 在确认上游 2xx 且有 body 后调用 rawReply.writeHeader
   const result: UpstreamResult = await upstreamRequest({
     protocol: 'anthropic',
     upstreamUrl,
@@ -163,25 +148,21 @@ export async function handleAnthropicMessages(
     extractStreamUsage: extractAnthropicStreamUsage,
     extractNonStreamUsage: extractAnthropicUsage,
     cleanNonStreamBody: (responseBody: Record<string, unknown>) => {
-      const cleanedBody = cleanXfyunFields(JSON.stringify(responseBody));
-      return JSON.parse(cleanedBody) as Record<string, unknown>;
-},
-    formatStreamErrorEvent: (errMsg: string) =>
-      `event: error\ndata: ${JSON.stringify({
-        type: 'error',
-        error: {
-          type: 'api_error',
-          message: `stream interrupted: ${errMsg}`,
-        },
-      })}\n\n`,
+      cleanXfyunFieldsObj(responseBody);
+      return responseBody;
+    },
+    formatStreamErrorEvent,
     request: { id: request.id, url: request.url, headers: request.headers, log: request.log },
-    rawReply: { write: (data) => reply.raw.write(data), end: () => reply.raw.end() },
+    rawReply: {
+      write: (data) => reply.raw.write(data),
+      end: () => reply.raw.end(),
+      writeHeader: (statusCode, hdrs) => reply.raw.writeHead(statusCode, hdrs),
+    },
     diagnostics: diag,
   });
 
   // Handle result based on errorType
-  // 流式请求中 writeHead(200) 已发送，错误分支必须通过 raw.write + raw.end 发送 SSE 错误事件，
-  // 不能调用 reply.status().send()（会触发 ERR_HTTP_HEADERS_SENT）
+  // upstreamRequest 已延迟 writeHead，错误分支可直接用 reply.status().send()
   if (result.errorType === 'network') {
     if (reply.raw.headersSent) {
       reply.raw.write(formatStreamErrorEvent(`upstream request failed: ${result.error}`));

@@ -42,9 +42,9 @@ describe('Claude Code 配置逻辑', () => {
   });
 
   describe('readSettings', () => {
-    it('returns empty object for non-existent file', () => {
+    it('returns empty data and parseFailed=false for non-existent file', () => {
       const result = readSettings('/nonexistent/path/settings.json');
-      expect(result).toEqual({});
+      expect(result).toEqual({ data: {}, parseFailed: false });
     });
   });
 

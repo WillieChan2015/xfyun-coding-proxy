@@ -1,6 +1,4 @@
 import path from 'node:path';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import Fastify, { FastifyInstance, FastifyError, FastifyRequest, FastifyReply } from 'fastify';
 import cors from '@fastify/cors';
 import { ResolvedConfig, config, DEFAULT_MODEL } from './config';
@@ -8,12 +6,12 @@ import { handleProxy, handleGetProxy } from './proxy';
 import { handleOllamaChat, handleOllamaGenerate } from './ollama/handler';
 import { handleAnthropicMessages } from './anthropic/handler';
 import { estimateInputTokens } from './util';
-import { printSessionSummary, initDailyStats, saveDailyStats, rolloverDailyStats, dailyStats, recordRequestComplete, requestFinished, getRequestLog, statsEmitter, sessionStats, getActiveRequests, getStreamingRequests, getLatencyStats, resetDailyStats, setRolloverFn, setSaveFn } from './stats';
+import { printSessionSummary, initDailyStats, saveDailyStats, saveDailyStatsAsync, rolloverDailyStats, dailyStats, recordRequestComplete, requestFinished, getRequestLog, statsEmitter, sessionStats, getActiveRequests, getStreamingRequests, getLatencyStats, resetDailyStats, setRolloverFn, setSaveFn } from './stats';
 import { checkForUpdate } from './update-check';
+import { getPackageVersion, getPackageName } from './cli';
 
-// 读取当前包版本，用于启动时更新检查
-const pkg = JSON.parse(readFileSync(resolve(import.meta.dirname, '../package.json'), 'utf-8'));
-const { name, version } = pkg;
+const name = getPackageName();
+const version = getPackageVersion();
 let flushTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
@@ -76,11 +74,13 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
   // 注入保存回调，使 resetDailyStats 在重置前能先持久化当前数据
   setSaveFn((stats) => saveDailyStats(cfg.logDir, stats));
 
-  // 启动定时刷盘
+  // 启动定时刷盘（异步版本，避免阻塞事件循环）
   if (cfg.statsFlushInterval > 0) {
     flushTimer = setInterval(() => {
       rolloverDailyStats(cfg.logDir);
-      saveDailyStats(cfg.logDir, dailyStats);
+      saveDailyStatsAsync(cfg.logDir, dailyStats).catch((err) => {
+        console.warn('Periodic stats flush failed:', err);
+      });
     }, cfg.statsFlushInterval);
     // 不阻止进程退出
     if (flushTimer && typeof flushTimer === 'object' && 'unref' in flushTimer) {
@@ -125,9 +125,9 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
 
   const server = Fastify({
     // 超时与 body 限制：防止连接挂死/超大请求拖垮本地代理
-    // requestTimeout 需大于 fetch 上游超时(120s)，否则 Fastify 会先于 fetch 中断请求
+    // requestTimeout 需大于 upstreamFetchTimeout（默认 300s），否则 Fastify 会先于 fetch 中断请求
     connectionTimeout: 30_000,
-    requestTimeout: 180_000,
+    requestTimeout: 600_000,
     bodyLimit: 1_048_576, // 1MB
     logger: {
       level: cfg.verbose ? 'debug' : 'info',

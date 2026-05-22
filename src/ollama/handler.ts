@@ -4,9 +4,11 @@ import {
   upstreamRequest,
   extractStreamUsage,
   buildUpstreamUrl,
+  cleanXfyunFieldsObj,
 } from '../upstream';
 import type { UpstreamResult } from '../upstream';
 import { recordRequestComplete, requestStarted, requestFinished } from '../stats';
+import { readBodyWithLimit } from '../util';
 import { convertChatRequest, convertGenerateRequest } from './request';
 import {
   convertChatResponse,
@@ -63,7 +65,7 @@ export async function handleOllamaTags(
       signal: AbortSignal.timeout(30_000),
     });
 
-    const body = await response.text();
+    const body = await readBodyWithLimit(response);
     const latencyMs = Date.now() - startTime;
     request.log.info(`ollama tags | ${response.status}`);
 
@@ -169,16 +171,8 @@ async function handleOllamaProxy(
     Authorization: `Bearer ${config.apiKey}`,
   };
 
-  // 流式请求：提前写入 NDJSON 响应头
-  if (isStream) {
-    reply.raw.writeHead(200, {
-      'Content-Type': 'application/x-ndjson',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
-    });
-  }
-
+  // 流式响应头延迟写入：不再提前 writeHead(200)，
+  // 由 upstreamRequest 在确认上游 2xx 且有 body 后调用 rawReply.writeHeader
   // ---- 步骤 3：通过 upstreamRequest 统一转发 ----
   const ndjsonConverter = new SSEToNDJSONConverter(endpoint);
 
@@ -188,6 +182,12 @@ async function handleOllamaProxy(
     headers: upstreamHeaders,
     body: openaiBody,
     isStream,
+    streamHeaders: {
+      'Content-Type': 'application/x-ndjson',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    },
     extractStreamUsage: (rawChunk: string) => {
       const usage = extractStreamUsage(rawChunk);
       if (usage.promptTokens !== undefined) {
@@ -199,16 +199,7 @@ async function handleOllamaProxy(
       return {};
     },
     cleanNonStreamBody: (responseBody: Record<string, unknown>) => {
-      const choices = responseBody.choices as Array<Record<string, unknown>> | undefined;
-      if (choices) {
-        for (const choice of choices) {
-          const message = choice.message as Record<string, unknown> | undefined;
-          if (message) {
-            delete message.plugins_content;
-            delete message.reasoning_content;
-          }
-        }
-      }
+      cleanXfyunFieldsObj(responseBody);
       return responseBody;
     },
     streamTransform: isStream
@@ -216,7 +207,11 @@ async function handleOllamaProxy(
       : undefined,
     formatStreamErrorEvent: formatOllamaStreamErrorEvent,
     request: { id: request.id, url: request.url, headers: request.headers, log: request.log },
-    rawReply: { write: (data) => reply.raw.write(data), end: () => reply.raw.end() },
+    rawReply: {
+      write: (data) => reply.raw.write(data),
+      end: () => reply.raw.end(),
+      writeHeader: (statusCode, hdrs) => reply.raw.writeHead(statusCode, hdrs),
+    },
   });
 
   // ---- 步骤 4：处理结果 ----

@@ -30,13 +30,13 @@ export function detectClaudeCode(): string | null {
   }
 }
 
-export function readSettings(filePath: string): Record<string, unknown> | null {
-  if (!existsSync(filePath)) return {};
+export function readSettings(filePath: string): { data: Record<string, unknown>; parseFailed: boolean } {
+  if (!existsSync(filePath)) return { data: {}, parseFailed: false };
   try {
     const content = readFileSync(filePath, 'utf8');
-    return JSON.parse(content) as Record<string, unknown>;
+    return { data: JSON.parse(content) as Record<string, unknown>, parseFailed: false };
   } catch {
-    return null;
+    return { data: {}, parseFailed: true };
   }
 }
 
@@ -184,8 +184,9 @@ function readCurrentEnv(configPath: string): Record<string, string> {
 
   if (configPath.endsWith('.json')) {
     const settings = readSettings(configPath);
-    if (settings && typeof settings.env === 'object') {
-      return { ...(settings.env as Record<string, string>) };
+    if (settings.parseFailed) return {};
+    if (typeof settings.data.env === 'object') {
+      return { ...(settings.data.env as Record<string, string>) };
     }
     return {};
   }
@@ -240,8 +241,8 @@ export function previewClaudeCodeSettings(
   settingsPath?: string,
 ): SetupPreview {
   const resolvedPath = settingsPath ?? getSettingsPath();
-  const existing = readSettings(resolvedPath);
-  const env = (existing?.env ?? {}) as Record<string, string>;
+  const { data: existing } = readSettings(resolvedPath);
+  const env = (existing.env ?? {}) as Record<string, string>;
 
   const newBaseUrl = `http://127.0.0.1:${port}/anthropic`;
   const newModel = DEFAULT_MODEL;
@@ -279,8 +280,8 @@ export function applySettingsJson(port: number, apiKey: string): SetupResult {
   const settingsPath = getSettingsPath();
 
   try {
-    const existing = readSettings(settingsPath);
-    if (existing === null) {
+    const { data: existing, parseFailed } = readSettings(settingsPath);
+    if (parseFailed) {
       return { success: false, error: `配置文件格式错误: ${settingsPath}` };
     }
 

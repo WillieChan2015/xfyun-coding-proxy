@@ -106,6 +106,73 @@ export async function readWithTimeout(
 }
 
 /**
+ * 带大小限制的响应体读取
+ *
+ * 原生 response.text() 无大小限制，上游异常返回超大 body 会吃掉内存。
+ * 通过流式读取 + 字节计数，超过 maxSize 时中止并抛错。
+ */
+export async function readBodyWithLimit(
+  response: Response,
+  maxSize: number = 1_048_576, // 1MB，与 Fastify bodyLimit 一致
+): Promise<string> {
+  const contentLength = response.headers.get('content-length');
+  if (contentLength && parseInt(contentLength, 10) > maxSize) {
+    throw new Error(`response body too large: Content-Length ${contentLength} exceeds limit ${maxSize}`);
+  }
+
+  if (!response.body) {
+    return '';
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxSize) {
+        throw new Error(`response body too large: exceeded ${maxSize} bytes (read ${totalBytes})`);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  // 合并 chunks 并解码
+  const combined = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(combined);
+}
+
+/**
+ * 从请求中提取白名单 headers，用于转发到上游
+ *
+ * 三个 handler（OpenAI/Anthropic/Ollama）都需要从客户端请求中
+ * 提取 Authorization 等关键 headers 转发给上游，此函数统一该逻辑。
+ */
+export function extractUpstreamHeaders(
+  reqHeaders: Record<string, string | string[] | undefined>,
+  allowedHeaders: readonly string[],
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const key of allowedHeaders) {
+    const value = reqHeaders[key.toLowerCase()];
+    if (typeof value === 'string' && value) {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
+/**
  * 格式化 token 数量为可读字符串
  */
 export function fmtTokens(n: number): string {
