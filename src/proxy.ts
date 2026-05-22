@@ -23,6 +23,28 @@ function formatStreamErrorEvent(errMsg: string): string {
   })}\n\ndata: [DONE]\n\n`;
 }
 
+/** 安全解析上游错误体，确保返回 OpenAI 格式的错误响应 */
+function safeParseOpenAIError(errorBody: string, fallbackStatus: number): { status: number; body: unknown } {
+  try {
+    const parsed = JSON.parse(errorBody);
+    // 已经是 OpenAI 错误格式 { error: { message, type, code } }
+    if (parsed?.error?.message) {
+      return { status: fallbackStatus, body: parsed };
+    }
+    // 讯飞格式 { code, msg, sid } → 转换为 OpenAI 格式
+    if (parsed?.code !== undefined && parsed?.msg !== undefined) {
+      return {
+        status: fallbackStatus,
+        body: formatOpenAIError(fallbackStatus, `[code:${parsed.code}] ${parsed.msg}`),
+      };
+    }
+    // 其他未知格式
+    return { status: fallbackStatus, body: formatOpenAIError(fallbackStatus, errorBody) };
+  } catch {
+    return { status: fallbackStatus, body: formatOpenAIError(fallbackStatus, errorBody) };
+  }
+}
+
 // Re-exports from upstream.ts for backward compatibility with existing test imports
 export {
   isRetryableXfyunError,
@@ -168,7 +190,10 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
       reply.raw.write(formatStreamErrorEvent(`upstream returned ${result.status}`));
       reply.raw.end();
     } else {
-      reply.status(result.status).send(result.errorBody);
+      // 上游返回非 2xx，errorBody 可能是讯飞格式而非 OpenAI 格式，
+      // 统一包装为 OpenAI 错误格式，确保 IDE 能正确解析
+      const parsed = safeParseOpenAIError(result.errorBody ?? '', result.status);
+      reply.status(parsed.status).send(parsed.body);
     }
     return;
   }

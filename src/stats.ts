@@ -22,6 +22,17 @@ export const sessionStats = {
   byDate: {} as Record<string, SessionDayStats>,
 };
 
+export function resetSessionStats(): void {
+  sessionStats.requestCount = 0;
+  sessionStats.totalPromptTokens = 0;
+  sessionStats.totalCompletionTokens = 0;
+  sessionStats.retries = 0;
+  sessionStats.errors = 0;
+  sessionStats.startTime = Date.now();
+  sessionStats.protocols = {};
+  sessionStats.byDate = {};
+}
+
 function fmtUptime(ms: number): string {
   const sec = Math.floor(ms / 1000);
   if (sec < 60) return `${sec}s`;
@@ -66,6 +77,15 @@ let dailyStatsDirty = false;
 
 function formatDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function formatStatsLine(
+  label: string,
+  stats: { requestCount: number; totalPromptTokens: number; totalCompletionTokens: number; errors?: number },
+  labelWidth: number = 14,
+): string {
+  const errSuffix = (stats.errors ?? 0) > 0 ? `  ${stats.errors} err` : '';
+  return `    ${label.padEnd(labelWidth)}${String(stats.requestCount).padStart(5)} req  ${fmtTokens(stats.totalPromptTokens).padStart(10)} in  ${fmtTokens(stats.totalCompletionTokens).padStart(10)} out${errSuffix}`;
 }
 
 export function todayStr(): string {
@@ -166,6 +186,16 @@ function saveDailyStatsForce(logDir: string, stats: DailyStats): void {
  * 检查日期是否翻转，若跨天则将旧数据持久化并重置 dailyStats 为新一天
  * 在每次请求入口和定时刷盘时调用
  */
+function resetDailyStatsFields(date: string): void {
+  dailyStats.date = date;
+  dailyStats.requestCount = 0;
+  dailyStats.totalPromptTokens = 0;
+  dailyStats.totalCompletionTokens = 0;
+  dailyStats.retries = 0;
+  dailyStats.errors = 0;
+  dailyStats.protocols = {};
+}
+
 export function rolloverDailyStats(logDir: string): void {
   const today = todayStr();
   if (dailyStats.date === today) return;
@@ -180,13 +210,7 @@ export function rolloverDailyStats(logDir: string): void {
   if (existing) {
     Object.assign(dailyStats, existing);
   } else {
-    dailyStats.date = today;
-    dailyStats.requestCount = 0;
-    dailyStats.totalPromptTokens = 0;
-    dailyStats.totalCompletionTokens = 0;
-    dailyStats.retries = 0;
-    dailyStats.errors = 0;
-    dailyStats.protocols = {};
+    resetDailyStatsFields(today);
   }
   dailyStatsDirty = false;
 }
@@ -197,13 +221,7 @@ export function initDailyStats(logDir: string): void {
   if (existing) {
     Object.assign(dailyStats, existing);
   } else {
-    dailyStats.date = today;
-    dailyStats.requestCount = 0;
-    dailyStats.totalPromptTokens = 0;
-    dailyStats.totalCompletionTokens = 0;
-    dailyStats.retries = 0;
-    dailyStats.errors = 0;
-    dailyStats.protocols = {};
+    resetDailyStatsFields(today);
   }
   dailyStatsDirty = false;
 }
@@ -252,11 +270,16 @@ export interface RequestCompleteEvent {
 }
 
 // ---- 请求完成时的日期翻转回调 ----
-// 由 server.ts 在启动时通过 setRolloverFn 注入，避免 recordRequestComplete 需要感知 logDir
+// 由 server.ts 在启动时通过 setRolloverFn / setSaveFn 注入，避免 stats 模块需要感知 logDir
 let rolloverFn: (() => void) | null = null;
+let saveFn: ((stats: DailyStats) => void) | null = null;
 
 export function setRolloverFn(fn: (() => void) | null): void {
   rolloverFn = fn;
+}
+
+export function setSaveFn(fn: ((stats: DailyStats) => void) | null): void {
+  saveFn = fn;
 }
 
 /**
@@ -274,12 +297,14 @@ export function recordRequestComplete(event: RequestCompleteEvent): void {
   dailyStatsDirty = true;
   const { protocol, inputTokens, outputTokens, success, retries } = event;
 
+  const errorCount = success ? 0 : 1;
+
   // 集中更新 sessionStats
   sessionStats.requestCount++;
   sessionStats.totalPromptTokens += inputTokens;
   sessionStats.totalCompletionTokens += outputTokens;
   sessionStats.retries += retries;
-  if (!success) sessionStats.errors++;
+  sessionStats.errors += errorCount;
 
   // 按 session 内的实际完成日归入 byDate（用于跨天分日明细）
   const completionDate = today;
@@ -297,30 +322,25 @@ export function recordRequestComplete(event: RequestCompleteEvent): void {
   dayStats.totalPromptTokens += inputTokens;
   dayStats.totalCompletionTokens += outputTokens;
   dayStats.retries += retries;
-  if (!success) dayStats.errors++;
+  dayStats.errors += errorCount;
 
   // 集中更新 dailyStats
   dailyStats.requestCount++;
   dailyStats.totalPromptTokens += inputTokens;
   dailyStats.totalCompletionTokens += outputTokens;
   dailyStats.retries += retries;
-  if (!success) dailyStats.errors++;
+  dailyStats.errors += errorCount;
 
   // 集中更新协议统计
-  incrementProtocolStats(sessionStats, protocol, {
+  const protocolDelta = {
     requestCount: 1,
     totalPromptTokens: inputTokens,
     totalCompletionTokens: outputTokens,
     retries,
-    ...(success ? {} : { errors: 1 }),
-  });
-  incrementProtocolStats(dailyStats, protocol, {
-    requestCount: 1,
-    totalPromptTokens: inputTokens,
-    totalCompletionTokens: outputTokens,
-    retries,
-    ...(success ? {} : { errors: 1 }),
-  });
+    errors: errorCount,
+  };
+  incrementProtocolStats(sessionStats, protocol, protocolDelta);
+  incrementProtocolStats(dailyStats, protocol, protocolDelta);
 
   // 发射事件
   statsEmitter.emit('request:complete', event);
@@ -457,13 +477,12 @@ export function getRequestLog(): ReadonlyArray<RequestLogEntry> {
 }
 
 export function resetDailyStats(): void {
-  dailyStats.date = todayStr();
-  dailyStats.requestCount = 0;
-  dailyStats.totalPromptTokens = 0;
-  dailyStats.totalCompletionTokens = 0;
-  dailyStats.retries = 0;
-  dailyStats.errors = 0;
-  dailyStats.protocols = {};
+  // 重置前先保存当前数据，避免 rollover 时用全零覆写已有数据
+  if (saveFn && dailyStatsDirty && dailyStats.date) {
+    saveFn(dailyStats);
+    dailyStatsDirty = false;
+  }
+  resetDailyStatsFields(todayStr());
   dailyStatsDirty = true;
 }
 
@@ -503,8 +522,7 @@ export function printDailyStats(date: string, stats: DailyStats | null): void {
     const sorted = protocolKeys.sort((a, b) => stats.protocols[b].requestCount - stats.protocols[a].requestCount);
     for (const name of sorted) {
       const p = stats.protocols[name];
-      const totalTok = p.totalPromptTokens + p.totalCompletionTokens;
-      console.log(`    ${name.padEnd(14)}${String(p.requestCount).padStart(5)} req   ${fmtTokens(totalTok).padStart(14)} tok   ${String(p.errors).padStart(1)} err`);
+      console.log(formatStatsLine(name, p));
     }
   }
   console.log('════════════════════════════════════════════════');
@@ -568,13 +586,7 @@ export function printSessionSummary(): void {
     console.log('  By Day:');
     for (const date of byDateKeys) {
       const d = sessionStats.byDate[date];
-      const dayTotal = d.totalPromptTokens + d.totalCompletionTokens;
-      console.log(`    ${date}`);
-      console.log(`      Requests:   ${d.requestCount}`);
-      console.log(`      Tokens:     ${fmtTokens(dayTotal)}`);
-      console.log(`        Input:    ${fmtTokens(d.totalPromptTokens)}`);
-      console.log(`        Output:   ${fmtTokens(d.totalCompletionTokens)}`);
-      if (d.errors > 0) console.log(`        Errors:   ${d.errors}`);
+      console.log(formatStatsLine(date, d, 10));
     }
   }
 
@@ -585,13 +597,7 @@ export function printSessionSummary(): void {
     const sorted = sessionProtocolKeys.sort((a, b) => sessionStats.protocols[b].requestCount - sessionStats.protocols[a].requestCount);
     for (const name of sorted) {
       const p = sessionStats.protocols[name];
-      const totalTok = p.totalPromptTokens + p.totalCompletionTokens;
-      console.log(`    ${name}`);
-      console.log(`      Requests:   ${p.requestCount}`);
-      console.log(`      Tokens:     ${fmtTokens(totalTok)}`);
-      console.log(`        Input:    ${fmtTokens(p.totalPromptTokens)}`);
-      console.log(`        Output:   ${fmtTokens(p.totalCompletionTokens)}`);
-      if (p.errors > 0) console.log(`        Errors:   ${p.errors}`);
+      console.log(formatStatsLine(name, p));
     }
   }
 
@@ -609,16 +615,11 @@ export function printSessionSummary(): void {
     console.log(`  Errors:         ${dailyStats.errors}`);
     const todayProtocolKeys = Object.keys(dailyStats.protocols);
     if (todayProtocolKeys.length > 0) {
+      console.log('    By Protocol:');
       const sorted = todayProtocolKeys.sort((a, b) => dailyStats.protocols[b].requestCount - dailyStats.protocols[a].requestCount);
       for (const name of sorted) {
         const p = dailyStats.protocols[name];
-        const totalTok = p.totalPromptTokens + p.totalCompletionTokens;
-        console.log(`    ${name}`);
-        console.log(`      Requests:   ${p.requestCount}`);
-        console.log(`      Tokens:     ${fmtTokens(totalTok)}`);
-        console.log(`        Input:    ${fmtTokens(p.totalPromptTokens)}`);
-        console.log(`        Output:   ${fmtTokens(p.totalCompletionTokens)}`);
-        if (p.errors > 0) console.log(`        Errors:   ${p.errors}`);
+        console.log(formatStatsLine(name, p));
       }
     }
   }

@@ -8,7 +8,7 @@ import { handleProxy, handleGetProxy } from './proxy';
 import { handleOllamaChat, handleOllamaGenerate } from './ollama/handler';
 import { handleAnthropicMessages } from './anthropic/handler';
 import { estimateInputTokens } from './util';
-import { printSessionSummary, initDailyStats, saveDailyStats, rolloverDailyStats, dailyStats, recordRequestComplete, requestFinished, getRequestLog, statsEmitter, sessionStats, getActiveRequests, getStreamingRequests, getLatencyStats, resetDailyStats, setRolloverFn } from './stats';
+import { printSessionSummary, initDailyStats, saveDailyStats, rolloverDailyStats, dailyStats, recordRequestComplete, requestFinished, getRequestLog, statsEmitter, sessionStats, getActiveRequests, getStreamingRequests, getLatencyStats, resetDailyStats, setRolloverFn, setSaveFn } from './stats';
 import { checkForUpdate } from './update-check';
 
 // 读取当前包版本，用于启动时更新检查
@@ -26,6 +26,8 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
 
   // 注入日期翻转回调，使 recordRequestComplete 在跨天完成时能自动触发 rollover
   setRolloverFn(() => rolloverDailyStats(cfg.logDir));
+  // 注入保存回调，使 resetDailyStats 在重置前能先持久化当前数据
+  setSaveFn((stats) => saveDailyStats(cfg.logDir, stats));
 
   // 启动定时刷盘
   if (cfg.statsFlushInterval > 0) {
@@ -152,8 +154,15 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
 
     // 流式请求中 reply.raw.writeHead(200) 已发送，此时若 handler 抛出异常，
     // Fastify 仍会进入 setErrorHandler，但 reply.status().send() 会因 headers 已发送
-    // 而抛出 ERR_HTTP_HEADERS_SENT。检测 headersSent 后直接结束 raw socket 即可。
+    // 而抛出 ERR_HTTP_HEADERS_SENT。检测 headersSent 后写入 SSE 错误事件再结束流，
+    // 让客户端收到错误信息而非空 body。
     if (reply.raw.headersSent) {
+      const isAnthropic = request.url.startsWith('/anthropic/');
+      // Anthropic SSE 错误事件格式与 OpenAI 不同
+      const sseError = isAnthropic
+        ? `event: error\ndata: ${JSON.stringify({ type: 'error', error: { type: 'api_error', message: error.message || 'Internal server error' } })}\n\n`
+        : `data: ${JSON.stringify({ error: { message: error.message || 'Internal server error', type: 'upstream_error', code: status } })}\n\ndata: [DONE]\n\n`;
+      try { reply.raw.write(sseError); } catch { /* client already closed */ }
       try { reply.raw.end(); } catch { /* client already closed */ }
       return;
     }

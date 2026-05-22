@@ -20,6 +20,9 @@ import {
   printSessionSummary,
   recordRequestComplete,
   setRolloverFn,
+  setSaveFn,
+  resetSessionStats,
+  resetDailyStats,
 } from '../../src/stats';
 
 const TMP_DIR = join(import.meta.dir, '..', 'tmp-stats-test');
@@ -332,6 +335,16 @@ describe('printStatsHistory with protocols', () => {
 });
 
 describe('printSessionSummary with protocols', () => {
+  afterEach(() => {
+    resetSessionStats();
+    dailyStats.requestCount = 0;
+    dailyStats.totalPromptTokens = 0;
+    dailyStats.totalCompletionTokens = 0;
+    dailyStats.retries = 0;
+    dailyStats.errors = 0;
+    dailyStats.protocols = {};
+  });
+
   it('includes By Protocol in session section', () => {
     sessionStats.requestCount = 15;
     sessionStats.totalPromptTokens = 5200;
@@ -346,14 +359,6 @@ describe('printSessionSummary with protocols', () => {
     expect(output).toContain('By Protocol:');
     expect(output).toContain('anthropic');
     expect(output).toContain('openai');
-
-    // Reset sessionStats after test
-    sessionStats.requestCount = 0;
-    sessionStats.totalPromptTokens = 0;
-    sessionStats.totalCompletionTokens = 0;
-    sessionStats.retries = 0;
-    sessionStats.errors = 0;
-    sessionStats.protocols = {};
   });
 
   it('includes protocol summary in Today section when protocols exist', () => {
@@ -367,19 +372,12 @@ describe('printSessionSummary with protocols', () => {
       anthropic: { requestCount: 3, totalPromptTokens: 300, totalCompletionTokens: 200, retries: 0, errors: 0 },
     };
     const output = captureOutput(() => printSessionSummary());
-    expect(output).toContain('openai');
-    expect(output).toContain('Requests:   7');
-    expect(output).toContain('anthropic');
-    expect(output).toContain('Requests:   3');
-    expect(output).toContain('1.0k(1,000)');
-    expect(output).toContain('500');
+    expect(output).toMatch(/openai\s+7 req/);
+    expect(output).toMatch(/anthropic\s+3 req/);
+    expect(output).toContain('700 in');
+    expect(output).toContain('300 out');
 
-    // Reset
     dailyStats.date = origDate;
-    dailyStats.requestCount = 0;
-    dailyStats.totalPromptTokens = 0;
-    dailyStats.totalCompletionTokens = 0;
-    dailyStats.protocols = {};
   });
 
   it('omits By Protocol when protocols is empty', () => {
@@ -390,17 +388,11 @@ describe('printSessionSummary with protocols', () => {
 
 describe('sessionStats.byDate', () => {
   beforeEach(() => {
-    sessionStats.byDate = {};
+    resetSessionStats();
   });
 
   afterEach(() => {
-    sessionStats.requestCount = 0;
-    sessionStats.totalPromptTokens = 0;
-    sessionStats.totalCompletionTokens = 0;
-    sessionStats.retries = 0;
-    sessionStats.errors = 0;
-    sessionStats.protocols = {};
-    sessionStats.byDate = {};
+    resetSessionStats();
   });
 
   it('initializes with empty byDate', () => {
@@ -455,13 +447,7 @@ describe('sessionStats.byDate', () => {
 describe('setRolloverFn / cross-day rollover guard', () => {
   afterEach(() => {
     setRolloverFn(null);
-    sessionStats.requestCount = 0;
-    sessionStats.totalPromptTokens = 0;
-    sessionStats.totalCompletionTokens = 0;
-    sessionStats.retries = 0;
-    sessionStats.errors = 0;
-    sessionStats.protocols = {};
-    sessionStats.byDate = {};
+    resetSessionStats();
     dailyStats.requestCount = 0;
     dailyStats.totalPromptTokens = 0;
     dailyStats.totalCompletionTokens = 0;
@@ -530,13 +516,7 @@ describe('setRolloverFn / cross-day rollover guard', () => {
 
 describe('printSessionSummary By Day section', () => {
   afterEach(() => {
-    sessionStats.requestCount = 0;
-    sessionStats.totalPromptTokens = 0;
-    sessionStats.totalCompletionTokens = 0;
-    sessionStats.retries = 0;
-    sessionStats.errors = 0;
-    sessionStats.protocols = {};
-    sessionStats.byDate = {};
+    resetSessionStats();
   });
 
   it('shows By Day when multiple dates exist in byDate', () => {
@@ -574,13 +554,7 @@ describe('printSessionSummary By Day section', () => {
 
 describe('printSessionSummary Today section with zero requests', () => {
   afterEach(() => {
-    sessionStats.requestCount = 0;
-    sessionStats.totalPromptTokens = 0;
-    sessionStats.totalCompletionTokens = 0;
-    sessionStats.retries = 0;
-    sessionStats.errors = 0;
-    sessionStats.protocols = {};
-    sessionStats.byDate = {};
+    resetSessionStats();
     dailyStats.requestCount = 0;
     dailyStats.totalPromptTokens = 0;
     dailyStats.totalCompletionTokens = 0;
@@ -604,5 +578,68 @@ describe('printSessionSummary Today section with zero requests', () => {
     const output = captureOutput(() => printSessionSummary());
     expect(output).toContain('Today');
     expect(output).toContain('5');
+  });
+});
+
+describe('resetDailyStats with saveFn', () => {
+  afterEach(() => {
+    setSaveFn(null);
+    resetSessionStats();
+    dailyStats.date = '';
+    dailyStats.requestCount = 0;
+    dailyStats.totalPromptTokens = 0;
+    dailyStats.totalCompletionTokens = 0;
+    dailyStats.retries = 0;
+    dailyStats.errors = 0;
+    dailyStats.protocols = {};
+  });
+
+  it('calls saveFn before resetting when dailyStatsDirty is true', () => {
+    let savedStats: DailyStats | null = null;
+    setSaveFn((stats) => { savedStats = { ...stats }; });
+
+    // 通过 recordRequestComplete 触发 dailyStatsDirty = true
+    dailyStats.date = todayStr();
+    recordRequestComplete({
+      protocol: 'openai',
+      model: 'gpt-4',
+      inputTokens: 100,
+      outputTokens: 50,
+      latencyMs: 500,
+      success: true,
+      retries: 0,
+    });
+
+    resetDailyStats();
+
+    expect(savedStats).not.toBeNull();
+    expect(savedStats!.requestCount).toBe(1);
+    expect(savedStats!.totalPromptTokens).toBe(100);
+  });
+
+  it('does not call saveFn when dailyStatsDirty is false', () => {
+    let saveCalled = false;
+    setSaveFn(() => { saveCalled = true; });
+
+    dailyStats.date = '2026-05-11';
+    dailyStats.requestCount = 0;
+    // dirty 为 false（刚 initDailyStats 或刚 save 后）
+    // resetDailyStats 内部检查 dailyStatsDirty，此时应为 false
+    // 但 resetDailyStats 本身会置 dirty=true，所以需要先确保 dirty=false
+    // 由于 dailyStatsDirty 是模块内部变量，无法直接设置，
+    // 通过 initDailyStats 来重置 dirty 状态
+    initDailyStats(TMP_DIR);
+    resetDailyStats();
+
+    expect(saveCalled).toBe(false);
+  });
+
+  it('does not call saveFn when saveFn is null', () => {
+    setSaveFn(null);
+
+    dailyStats.date = '2026-05-11';
+    dailyStats.requestCount = 5;
+    // dirty 状态无法直接控制，但 saveFn=null 时不会调用
+    expect(() => resetDailyStats()).not.toThrow();
   });
 });

@@ -868,7 +868,44 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
     };
   }
 
-  const responseBody = JSON.parse(responseBodyText) as Record<string, unknown>;
+  let responseBody: Record<string, unknown>;
+  try {
+    responseBody = JSON.parse(responseBodyText) as Record<string, unknown>;
+  } catch {
+    // 上游返回 HTTP 200 但响应体不是合法 JSON（如讯飞返回 {"code":10012,...} 非 OpenAI 格式）
+    reqInfo.log.error(
+      `non-stream response JSON parse failed | ${response.status} | ${durationMs}ms | retries=${retries} | body=${responseBodyText.slice(0, 300)}`,
+    );
+
+    recordRequestComplete({
+      protocol,
+      model,
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: durationMs,
+      success: false,
+      stream: isStream,
+      requestId: reqId,
+      path: reqPath,
+      ua,
+      retries,
+      error: `HTTP ${response.status} invalid JSON body`,
+    });
+    requestFinished();
+
+    return {
+      responseBody: null,
+      errorBody: responseBodyText,
+      status: response.status,
+      retries,
+      success: false,
+      errorType: 'upstream',
+      error: `HTTP ${response.status} invalid JSON body`,
+      inputTokens: 0,
+      outputTokens: 0,
+      durationMs,
+    };
+  }
 
   // 清理讯飞特有字段
   const finalBody = cleanNonStreamBody ? cleanNonStreamBody(responseBody) : responseBody;

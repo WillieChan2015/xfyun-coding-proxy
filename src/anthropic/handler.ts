@@ -17,6 +17,27 @@ function formatStreamErrorEvent(errMsg: string): string {
   })}\n\n`;
 }
 
+/** 安全解析上游错误体，确保返回 Anthropic 格式的错误响应 */
+function safeParseAnthropicError(errorBody: string, fallbackStatus: number): { status: number; body: unknown } {
+  try {
+    const parsed = JSON.parse(errorBody);
+    // 已经是 Anthropic 错误格式 { type: "error", error: { type, message } }
+    if (parsed?.type === 'error' && parsed?.error?.message) {
+      return { status: fallbackStatus, body: parsed };
+    }
+    // 讯飞格式 { code, msg, sid } → 转换为 Anthropic 格式
+    if (parsed?.code !== undefined && parsed?.msg !== undefined) {
+      return {
+        status: fallbackStatus,
+        body: formatAnthropicError('api_error', `[code:${parsed.code}] ${parsed.msg}`),
+      };
+    }
+    return { status: fallbackStatus, body: formatAnthropicError('api_error', errorBody) };
+  } catch {
+    return { status: fallbackStatus, body: formatAnthropicError('api_error', errorBody) };
+  }
+}
+
 /**
  * 从 Anthropic 响应中提取 token 用量
  * Anthropic 使用 input_tokens / output_tokens（非 OpenAI 的 prompt_tokens / completion_tokens）
@@ -176,7 +197,10 @@ export async function handleAnthropicMessages(
       reply.raw.write(formatStreamErrorEvent(`upstream returned ${result.status}`));
       reply.raw.end();
     } else {
-      reply.status(result.status).send(result.errorBody);
+      // 上游返回非 2xx，errorBody 可能是讯飞格式而非 Anthropic 格式，
+      // 统一包装为 Anthropic 错误格式
+      const parsed = safeParseAnthropicError(result.errorBody ?? '', result.status);
+      reply.status(parsed.status).send(parsed.body);
     }
     return;
   }
