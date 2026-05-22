@@ -87,16 +87,22 @@ export async function readWithTimeout(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   timeoutMs: number,
 ): Promise<ReadableStreamReadResult<Uint8Array>> {
+  let timer: ReturnType<typeof setTimeout>;
   const readPromise = reader.read() as Promise<ReadableStreamReadResult<Uint8Array>>;
   const timeoutPromise = new Promise<never>((_resolve, reject) => {
-    setTimeout(() => {
+    timer = setTimeout(() => {
+      reader.cancel().catch(() => {});
       reject(new Error(
         `stream read timeout: no data received for ${timeoutMs}ms, ` +
         'upstream may have stalled (large input causing long prefill, or network idle timeout)',
       ));
     }, timeoutMs);
   });
-  return Promise.race([readPromise, timeoutPromise]);
+  try {
+    return await Promise.race([readPromise, timeoutPromise]);
+  } finally {
+    clearTimeout(timer!);
+  }
 }
 
 /**

@@ -29,6 +29,8 @@ export type ResolvedConfig = z.infer<typeof configSchema>;
 
 // 模块级 config：loadConfig() 调用后赋值，proxy.ts 等通过 import { config } 读取
 // 初始值提供合理默认，避免测试中 import 时为 undefined
+// ⚠️ 注意：apiKey 初始为空字符串，使用前必须调用 loadConfig() + validateConfig() 初始化，
+// 否则上游请求会因缺少凭据而返回 401
 export let config: ResolvedConfig = {
   port: 3000,
   apiKey: '',

@@ -159,14 +159,7 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
       }
       return responseBody;
     },
-    formatStreamErrorEvent: (errMsg: string) =>
-      `data: ${JSON.stringify({
-        error: {
-          message: `stream interrupted: ${errMsg}`,
-          type: 'upstream_error',
-          code: 500,
-        },
-      })}\n\ndata: [DONE]\n\n`,
+    formatStreamErrorEvent,
     request: { id: request.id, url: request.url, headers: request.headers, log: request.log },
     rawReply: { write: (data) => reply.raw.write(data), end: () => reply.raw.end() },
     diagnostics: diag,
@@ -250,6 +243,8 @@ export async function handleGetProxy(
     Authorization: `Bearer ${config.apiKey}`,
   };
 
+  const startTime = Date.now();
+
   const response = await fetch(upstreamUrl, {
     method: 'GET',
     headers,
@@ -257,6 +252,7 @@ export async function handleGetProxy(
   });
 
   const body = await response.text();
+  const latencyMs = Date.now() - startTime;
 
   request.log.info(`GET proxied | ${response.status} | ${request.url}`);
 
@@ -268,7 +264,7 @@ export async function handleGetProxy(
     model: 'unknown',
     inputTokens: 0,
     outputTokens: 0,
-    latencyMs: 0,
+    latencyMs,
     success: true,
     stream: false,
     requestId: request.id,

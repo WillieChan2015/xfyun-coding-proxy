@@ -74,13 +74,16 @@ function createBaseOptions(
 let originalFetch: typeof globalThis.fetch;
 let originalMaxRetries: number;
 let originalRetryDelay: number;
+let originalApiKey: string;
 
 beforeEach(() => {
   originalFetch = globalThis.fetch;
   originalMaxRetries = config.maxRetries;
   originalRetryDelay = config.retryDelay;
+  originalApiKey = config.apiKey;
   config.maxRetries = 0;
   config.retryDelay = 0;
+  config.apiKey = 'test-api-key';
   mockLog.debug.mockClear();
   mockLog.info.mockClear();
   mockLog.warn.mockClear();
@@ -91,6 +94,7 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
   config.maxRetries = originalMaxRetries;
   config.retryDelay = originalRetryDelay;
+  config.apiKey = originalApiKey;
   sessionStats.protocols = {};
   resetDailyStats();
 });

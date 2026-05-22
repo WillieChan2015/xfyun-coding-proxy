@@ -1,17 +1,12 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { config } from '../config';
-import { readWithTimeout } from '../util';
 import {
-  fetchWithRetry,
-  SSEFilter,
-  cleanXfyunFields,
-  isRetryableXfyunError,
-  extractXfyunError,
-  buildUpstreamUrl,
+  upstreamRequest,
   extractStreamUsage,
+  buildUpstreamUrl,
 } from '../upstream';
-import { extractTokenUsage, fmtTokens } from '../util';
-import { rolloverDailyStats, recordRequestComplete, recordRequestStart, requestStarted, requestFinished, streamingStarted, streamingFinished } from '../stats';
+import type { UpstreamResult } from '../upstream';
+import { recordRequestComplete, requestStarted, requestFinished } from '../stats';
 import { convertChatRequest, convertGenerateRequest } from './request';
 import {
   convertChatResponse,
@@ -61,6 +56,7 @@ export async function handleOllamaTags(
   };
 
   try {
+    const startTime = Date.now();
     const response = await fetch(upstreamUrl, {
       method: 'GET',
       headers,
@@ -68,6 +64,7 @@ export async function handleOllamaTags(
     });
 
     const body = await response.text();
+    const latencyMs = Date.now() - startTime;
     request.log.info(`ollama tags | ${response.status}`);
 
     if (!response.ok) {
@@ -77,7 +74,7 @@ export async function handleOllamaTags(
         model: 'unknown',
         inputTokens: 0,
         outputTokens: 0,
-        latencyMs: 0,
+        latencyMs,
         success: false,
         requestId: request.id,
         path: request.url,
@@ -98,7 +95,7 @@ export async function handleOllamaTags(
       model: 'unknown',
       inputTokens: 0,
       outputTokens: 0,
-      latencyMs: 0,
+      latencyMs,
       success: true,
       requestId: request.id,
       path: request.url,
@@ -127,27 +124,26 @@ export async function handleOllamaTags(
   }
 }
 
+/** 流式错误时通过 raw.write 写入的 NDJSON 错误行格式 */
+function formatOllamaStreamErrorEvent(errMsg: string): string {
+  return JSON.stringify({ error: `stream interrupted: ${errMsg}` }) + '\n';
+}
+
 /**
  * Ollama 协议 POST 代理统一处理函数
  *
- * 流程：
+ * 通过 upstreamRequest() 统一处理请求转发、重试、SSE 过滤和统计，
+ * 仅在协议转换层（请求转换 + 响应转换）做 Ollama 特有逻辑：
  * 1. 请求转换：Ollama 格式 → OpenAI 格式（options 提升、format 映射、model 覆盖）
- * 2. 构建上游请求（API Key 注入 + 路径重写）
- * 3. 带重试地转发请求
- * 4. 根据流式/非流式分别处理响应
+ * 2. 响应转换：
  *    - 非流式：清理讯飞特有字段后转换为 Ollama JSON 格式
- *    - 流式：SSE 过滤 + 讯飞字段清理 → NDJSON 实时转换输出
+ *    - 流式：通过 streamTransform 回调将 SSE → NDJSON 实时转换输出
  */
 async function handleOllamaProxy(
   request: FastifyRequest,
   reply: FastifyReply,
   endpoint: OllamaEndpoint,
 ): Promise<void> {
-  requestStarted();
-  // 入口 rollover：确保 dailyStats 在请求处理前已切换到当天；
-  // 出口 rollover（recordRequestComplete 内）处理跨天完成的边界情况，两者互补
-  rolloverDailyStats(config.logDir);
-  const startTime = Date.now();
   const rawBody = request.body as Record<string, unknown>;
 
   // ---- 步骤 1：请求转换 Ollama → OpenAI ----
@@ -165,8 +161,6 @@ async function handleOllamaProxy(
     `ollama ${endpoint} | stream=${isStream} | model=${rawBody.model ?? 'unknown'} | ua=${ua}`,
   );
 
-  recordRequestStart('ollama', String(rawBody.model ?? 'unknown'), request.id, request.url, ua, isStream);
-
   // ---- 步骤 2：构建上游请求 ----
   const upstreamUrl = buildUpstreamUrl('/v1/chat/completions');
 
@@ -175,88 +169,37 @@ async function handleOllamaProxy(
     Authorization: `Bearer ${config.apiKey}`,
   };
 
-  // ---- 步骤 3：带重试地转发请求 ----
-  let response: Awaited<ReturnType<typeof fetchWithRetry>>['response'];
-  let responseBodyText: string | null;
-  let retries: number;
-
-  try {
-    const result = await fetchWithRetry(
-      upstreamUrl,
-      {
-        method: 'POST',
-        headers: upstreamHeaders,
-        body: JSON.stringify(openaiBody),
-      },
-      config.maxRetries,
-      config.retryDelay,
-      !isStream,
-      request.log,
-    );
-    response = result.response;
-    responseBodyText = result.body;
-    retries = result.retries;
-  } catch (err) {
-    const errMsg = err instanceof Error ? err.message : String(err);
-    request.log.error(`ollama upstream fetch error | ${Date.now() - startTime}ms | ${errMsg}`);
-
-    reply.status(502).send({ error: `upstream request failed: ${errMsg}` });
-    recordRequestComplete({
-      protocol: 'ollama',
-      model: String(rawBody.model ?? 'unknown'),
-      inputTokens: 0,
-      outputTokens: 0,
-      latencyMs: Date.now() - startTime,
-      success: false,
-      stream: isStream,
-      requestId: request.id,
-      path: request.url,
-      ua,
-      retries: 0,
-      error: errMsg,
+  // 流式请求：提前写入 NDJSON 响应头
+  if (isStream) {
+    reply.raw.writeHead(200, {
+      'Content-Type': 'application/x-ndjson',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
     });
-    requestFinished();
-    return;
   }
 
-  const durationMs = Date.now() - startTime;
+  // ---- 步骤 3：通过 upstreamRequest 统一转发 ----
+  const ndjsonConverter = new SSEToNDJSONConverter(endpoint);
 
-  // ---- 步骤 4：处理响应 ----
-
-  // 4a. 非流式请求的上游错误：转换为 Ollama 错误格式返回
-  if (!response.ok && !isStream && responseBodyText) {
-    request.log.error(`ollama upstream error | ${response.status} | ${durationMs}ms`);
-
-    try {
-      const errJson = JSON.parse(responseBodyText) as Record<string, unknown>;
-      reply.status(response.status).send(convertErrorToOllama(errJson));
-    } catch {
-      reply.status(response.status).send({ error: responseBodyText.slice(0, 200) });
-    }
-    recordRequestComplete({
-      protocol: 'ollama',
-      model: String(rawBody.model ?? 'unknown'),
-      inputTokens: 0,
-      outputTokens: 0,
-      latencyMs: durationMs,
-      success: false,
-      stream: isStream,
-      requestId: request.id,
-      path: request.url,
-      ua,
-      retries,
-      error: `upstream ${response.status}`,
-    });
-    requestFinished();
-    return;
-  }
-
-  // 4b. 非流式请求的正常响应：清理讯飞字段后转换为 Ollama 格式
-  if (!isStream && responseBodyText) {
-    try {
-      const openai = JSON.parse(responseBodyText) as Record<string, unknown>;
-
-      const choices = openai.choices as Array<Record<string, unknown>> | undefined;
+  const result: UpstreamResult = await upstreamRequest({
+    protocol: 'ollama',
+    upstreamUrl,
+    headers: upstreamHeaders,
+    body: openaiBody,
+    isStream,
+    extractStreamUsage: (rawChunk: string) => {
+      const usage = extractStreamUsage(rawChunk);
+      if (usage.promptTokens !== undefined) {
+        return { inputTokens: usage.promptTokens, outputTokens: usage.completionTokens };
+      }
+      if (usage.totalTokens !== undefined) {
+        return { inputTokens: usage.totalTokens, outputTokens: 0 };
+      }
+      return {};
+    },
+    cleanNonStreamBody: (responseBody: Record<string, unknown>) => {
+      const choices = responseBody.choices as Array<Record<string, unknown>> | undefined;
       if (choices) {
         for (const choice of choices) {
           const message = choice.message as Record<string, unknown> | undefined;
@@ -266,158 +209,87 @@ async function handleOllamaProxy(
           }
         }
       }
+      return responseBody;
+    },
+    streamTransform: isStream
+      ? (cleanedChunk: string) => ndjsonConverter.convert(cleanedChunk)
+      : undefined,
+    formatStreamErrorEvent: formatOllamaStreamErrorEvent,
+    request: { id: request.id, url: request.url, headers: request.headers, log: request.log },
+    rawReply: { write: (data) => reply.raw.write(data), end: () => reply.raw.end() },
+  });
 
-      const ollamaResponse =
-        endpoint === 'chat'
-          ? convertChatResponse(openai)
-          : convertGenerateResponse(openai);
+  // ---- 步骤 4：处理结果 ----
 
-      const usage = openai.usage as Record<string, unknown> | undefined;
-      const usageInfo = extractTokenUsage(usage || {});
-      const tokenInfo =
-        usageInfo.promptTokens !== undefined
-          ? `in=${fmtTokens(usageInfo.promptTokens!)} out=${fmtTokens(usageInfo.completionTokens!)}`
-          : '';
-
-      request.log.info(`ollama ${endpoint} completed | ${durationMs}ms | ${tokenInfo}`);
-
-      reply.status(200).send(ollamaResponse);
-      recordRequestComplete({
-        protocol: 'ollama',
-        model: String(rawBody.model ?? 'unknown'),
-        inputTokens: usageInfo.promptTokens ?? 0,
-        outputTokens: usageInfo.completionTokens ?? 0,
-        latencyMs: durationMs,
-        success: true,
-        stream: isStream,
-        requestId: request.id,
-        path: request.url,
-        ua,
-        retries,
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      request.log.error(`ollama response parse error | ${msg}`);
-      reply.status(500).send({ error: `response parse error: ${msg}` });
-      recordRequestComplete({
-        protocol: 'ollama',
-        model: String(rawBody.model ?? 'unknown'),
-        inputTokens: 0,
-        outputTokens: 0,
-        latencyMs: durationMs,
-        success: false,
-        stream: isStream,
-        requestId: request.id,
-        path: request.url,
-        ua,
-        retries: 0,
-        error: msg,
-      });
-    }
-    requestFinished();
-    return;
-  }
-
-  // 4c. 流式请求：SSE 过滤 + 讯飞字段清理 → NDJSON 实时转换
-  if (isStream && response.body) {
-    streamingStarted();
-    reply.raw.writeHead(200, {
-      'Content-Type': 'application/x-ndjson',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
-    });
-
-    const reader = response.body!.getReader() as ReadableStreamDefaultReader<Uint8Array>;
-    const sseFilter = new SSEFilter();
-    const ndjsonConverter = new SSEToNDJSONConverter(endpoint);
-    let promptTokens: number | undefined;
-    let completionTokens: number | undefined;
-    let streamError: string | null = null;
-
-    try {
-      while (true) {
-        const { done, value } = await readWithTimeout(reader, config.streamReadTimeout);
-        if (done) break;
-
-        const rawChunk = Buffer.from(value).toString('utf-8');
-
-        const filtered = sseFilter.filter(rawChunk, request.log);
-        const cleaned = cleanXfyunFields(filtered);
-
-        const ndjsonLines = ndjsonConverter.convert(cleaned);
-        for (const line of ndjsonLines) {
-          reply.raw.write(line + '\n');
-        }
-
-        if (isRetryableXfyunError(rawChunk)) {
-          const xfyunErr = extractXfyunError(rawChunk);
-          streamError = xfyunErr
-            ? `code=${xfyunErr.code} msg=${xfyunErr.msg}`
-            : 'unknown';
-          request.log.warn(`ollama xfyun error in stream | ${streamError}`);
-          break;
-        }
-
-        const usage = extractStreamUsage(rawChunk);
-        if (usage.promptTokens !== undefined) {
-          promptTokens = usage.promptTokens;
-          completionTokens = usage.completionTokens;
-        } else if (usage.totalTokens !== undefined) {
-          promptTokens = usage.totalTokens;
-          completionTokens = 0;
-        }
-      }
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      streamError = errMsg;
-      request.log.error(`ollama stream error | ${errMsg}`);
-      const errorLine = JSON.stringify({ error: `stream interrupted: ${errMsg}` }) + '\n';
-      reply.raw.write(errorLine);
-    } finally {
-      try { reader.releaseLock(); } catch { /* already released */ }
-      try { reply.raw.end(); } catch { /* client already closed */ }
-      streamingFinished();
-    }
-    requestFinished();
-
-    if (streamError) {
-      recordRequestComplete({
-        protocol: 'ollama',
-        model: String(rawBody.model ?? 'unknown'),
-        inputTokens: 0,
-        outputTokens: 0,
-        latencyMs: durationMs,
-        success: false,
-        stream: isStream,
-        requestId: request.id,
-        path: request.url,
-        ua,
-        retries,
-        error: streamError,
-      });
+  // 网络错误
+  if (result.errorType === 'network') {
+    if (reply.raw.headersSent) {
+      reply.raw.write(formatOllamaStreamErrorEvent(`upstream request failed: ${result.error}`));
+      reply.raw.end();
     } else {
-      const tokenInfo =
-        promptTokens !== undefined
-          ? `in=${fmtTokens(promptTokens)} out=${fmtTokens(completionTokens!)}`
-          : '';
-      request.log.info(`ollama ${endpoint} stream completed | ${durationMs}ms | ${tokenInfo}`);
-      recordRequestComplete({
-        protocol: 'ollama',
-        model: String(rawBody.model ?? 'unknown'),
-        inputTokens: promptTokens ?? 0,
-        outputTokens: completionTokens ?? 0,
-        latencyMs: durationMs,
-        success: true,
-        requestId: request.id,
-        path: request.url,
-        ua,
-        retries,
-      });
+      reply.status(502).send({ error: `upstream request failed: ${result.error}` });
     }
     return;
   }
 
+  // 上游返回非 2xx 错误
+  if (result.errorType === 'upstream') {
+    if (reply.raw.headersSent) {
+      reply.raw.write(formatOllamaStreamErrorEvent(`upstream returned ${result.status}`));
+      reply.raw.end();
+    } else {
+      try {
+        const errJson = JSON.parse(result.errorBody ?? '') as Record<string, unknown>;
+        reply.status(result.status).send(convertErrorToOllama(errJson));
+      } catch {
+        reply.status(result.status).send({ error: (result.errorBody ?? '').slice(0, 200) });
+      }
+    }
+    return;
+  }
+
+  // 空响应体
+  if (result.errorType === 'empty_body') {
+    if (reply.raw.headersSent) {
+      reply.raw.write(formatOllamaStreamErrorEvent(`upstream returned ${result.status} with empty body`));
+      reply.raw.end();
+    } else {
+      reply.status(result.status).send({ error: `upstream returned ${result.status} with empty body` });
+    }
+    return;
+  }
+
+  // 流式请求上游无 body
+  if (result.errorType === 'no_stream_body') {
+    if (reply.raw.headersSent) {
+      reply.raw.write(formatOllamaStreamErrorEvent(`upstream returned ${result.status} with no stream body`));
+      reply.raw.end();
+    } else {
+      reply.status(result.status).send({ error: `upstream returned ${result.status} with no stream body` });
+    }
+    return;
+  }
+
+  // 流式错误已在 upstreamRequest 内通过 rawReply.write 写入
+  if (result.errorType === 'stream_error') {
+    return;
+  }
+
+  // 流式成功 — 已由 upstreamRequest + streamTransform 处理
+  if (isStream && result.success) {
+    return;
+  }
+
+  // 非流式成功：将 OpenAI 响应转换为 Ollama 格式
+  if (result.responseBody) {
+    const ollamaResponse =
+      endpoint === 'chat'
+        ? convertChatResponse(result.responseBody)
+        : convertGenerateResponse(result.responseBody);
+    reply.status(result.status).send(ollamaResponse);
+    return;
+  }
+
+  // 兜底：不应到达此处
   reply.status(500).send({ error: 'unexpected response state' });
-  requestFinished();
 }

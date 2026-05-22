@@ -11,6 +11,10 @@ export interface SessionDayStats {
   errors: number;
 }
 
+// ⚠️ 线程安全说明：sessionStats 和 dailyStats 是模块级可变对象，
+// 在 Node.js 单线程事件循环中，对它们的 ++ 和 += 操作不会被中断，因而是安全的。
+// 但如果引入 worker_threads 或在同一进程内多次创建 server，这些非原子操作可能导致数据竞争。
+// 当前设计仅限单进程单线程使用。
 export const sessionStats = {
   requestCount: 0,
   totalPromptTokens: 0,
@@ -251,6 +255,7 @@ export function incrementProtocolStats(
 // ---- EventEmitter 事件系统 ----
 
 export const statsEmitter = new EventEmitter();
+statsEmitter.setMaxListeners(20);
 
 export type Protocol = 'openai' | 'anthropic' | 'ollama';
 

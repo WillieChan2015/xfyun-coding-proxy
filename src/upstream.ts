@@ -451,6 +451,8 @@ export interface UpstreamOptions {
   extractNonStreamUsage?: (body: Record<string, unknown>) => { promptTokens?: number; completionTokens?: number };
   cleanNonStreamBody?: (body: Record<string, unknown>) => Record<string, unknown>;
   cleanStreamChunk?: (chunk: string) => string;
+  /** 流式输出转换：将过滤+清理后的 SSE 文本转换为最终写入客户端的格式（如 NDJSON） */
+  streamTransform?: (cleanedChunk: string) => string[];
   formatStreamErrorEvent: (errMsg: string) => string;
   request: { id: string; url: string; headers: Record<string, string | string[] | undefined>; log: FastifyInstance['log'] };
   rawReply: { write: (data: string | Buffer) => boolean; end: () => void };
@@ -490,6 +492,11 @@ export interface UpstreamResult {
  * 4. rawReply.end() 在 finally 块中调用
  */
 export async function upstreamRequest(options: UpstreamOptions): Promise<UpstreamResult> {
+  // 防御性断言：确保 config 已通过 loadConfig() + validateConfig() 初始化
+  if (!config.apiKey) {
+    throw new Error('config.apiKey is empty — call loadConfig() + validateConfig() before handling requests');
+  }
+
   const {
     protocol,
     upstreamUrl,
@@ -501,6 +508,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
     extractNonStreamUsage: extractNonStreamUsageFn,
     cleanNonStreamBody,
     cleanStreamChunk,
+    streamTransform,
     formatStreamErrorEvent,
     request: reqInfo,
     rawReply,
@@ -717,7 +725,14 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
         const filtered = sseFilter.filter(rawChunk, reqInfo.log);
         const cleaned = cleanStreamChunk ? cleanStreamChunk(filtered) : cleanXfyunFields(filtered);
 
-        rawReply.write(cleaned);
+        if (streamTransform) {
+          const lines = streamTransform(cleaned);
+          for (const line of lines) {
+            rawReply.write(line + '\n');
+          }
+        } else {
+          rawReply.write(cleaned);
+        }
 
         if (isRetryableXfyunError(rawChunk)) {
           const xfyunErr = extractXfyunError(rawChunk);

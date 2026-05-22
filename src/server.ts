@@ -17,6 +17,53 @@ const { name, version } = pkg;
 let flushTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
+ * 注册 Ollama 静态路由（/api/tags、/api/version、/api/show）
+ * prefix 为 '/ollama' 或 ''，避免重复定义相同的 handler
+ */
+function registerOllamaStaticRoutes(server: FastifyInstance, prefix: string): void {
+  server.get(`${prefix}/api/tags`, async () => {
+    return {
+      models: [{
+        name: DEFAULT_MODEL,
+        model: DEFAULT_MODEL,
+        modified_at: new Date().toISOString(),
+        size: 0,
+        digest: '',
+        details: {
+          parent_model: '',
+          format: 'gguf',
+          family: 'astron',
+          parameter_size: '',
+          quantization_level: '',
+        },
+      }],
+    };
+  });
+  server.get(`${prefix}/api/version`, async () => {
+    return { version: '0.12.6' };
+  });
+  server.post(`${prefix}/api/show`, async () => {
+    return {
+      modified_at: new Date().toISOString(),
+      details: {
+        parent_model: '',
+        format: 'gguf',
+        family: 'astron',
+        families: ['astron'],
+        parameter_size: '',
+        quantization_level: '',
+      },
+      capabilities: ['completion', 'tools'],
+      model_info: {
+        'general.architecture': 'astron',
+        'astron.context_length': 192000,
+        'general.parameter_count': 0,
+      },
+    };
+  });
+}
+
+/**
  * 创建并配置 Fastify 实例（不调用 listen）
  * 便于测试和被其它工具内嵌调用
  */
@@ -215,90 +262,12 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
   // VS Code Continue.dev 等工具在 Ollama 模式下使用 OpenAI 兼容路径
   server.post('/ollama/v1/chat/completions', handleProxy);
   server.get('/ollama/v1/models', handleGetProxy);
-  server.get('/ollama/api/tags', async () => {
-    return {
-      models: [{
-        name: DEFAULT_MODEL,
-        model: DEFAULT_MODEL,
-        modified_at: new Date().toISOString(),
-        size: 0,
-        digest: '',
-        details: {
-          parent_model: '',
-          format: 'gguf',
-          family: 'astron',
-          parameter_size: '',
-          quantization_level: '',
-        },
-      }],
-    };
-  });
-  server.get('/ollama/api/version', async () => {
-    return { version: '0.12.6' };
-  });
-  server.post('/ollama/api/show', async () => {
-    return {
-      modified_at: new Date().toISOString(),
-      details: {
-        parent_model: '',
-        format: 'gguf',
-        family: 'astron',
-        families: ['astron'],
-        parameter_size: '',
-        quantization_level: '',
-      },
-      capabilities: ['completion', 'tools'],
-      model_info: {
-        'general.architecture': 'astron',
-        'astron.context_length': 192000,
-        'general.parameter_count': 0,
-      },
-    };
-  });
+  registerOllamaStaticRoutes(server, '/ollama');
 
   // Ollama 协议路由：不带前缀（Base URL = http://localhost:3000，VSCode 等工具直接拼接 /api/tags）
   server.post('/api/chat', handleOllamaChat);
   server.post('/api/generate', handleOllamaGenerate);
-  server.get('/api/tags', async () => {
-    return {
-      models: [{
-        name: DEFAULT_MODEL,
-        model: DEFAULT_MODEL,
-        modified_at: new Date().toISOString(),
-        size: 0,
-        digest: '',
-        details: {
-          parent_model: '',
-          format: 'gguf',
-          family: 'astron',
-          parameter_size: '',
-          quantization_level: '',
-        },
-      }],
-    };
-  });
-  server.get('/api/version', async () => {
-    return { version: '0.12.6' };
-  });
-  server.post('/api/show', async () => {
-    return {
-      modified_at: new Date().toISOString(),
-      details: {
-        parent_model: '',
-        format: 'gguf',
-        family: 'astron',
-        families: ['astron'],
-        parameter_size: '',
-        quantization_level: '',
-      },
-      capabilities: ['completion', 'tools'],
-      model_info: {
-        'general.architecture': 'astron',
-        'astron.context_length': 192000,
-        'general.parameter_count': 0,
-      },
-    };
-  });
+  registerOllamaStaticRoutes(server, '');
 
   server.get('/health', async () => {
     return { status: 'ok', upstream: config.baseUrl };
