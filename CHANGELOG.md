@@ -16,6 +16,55 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed / 修复
 
+## [0.0.7-beta.3] - 2026-05-22
+
+### Added / 新增
+
+- 新增 `UPSTREAM_FETCH_TIMEOUT_MS` 配置项，支持自定义上游请求总超时。
+- Added `UPSTREAM_FETCH_TIMEOUT_MS` config option for customizing upstream request total timeout.
+- 新增 `readBodyWithLimit` 工具函数，防止上游超大响应导致 OOM。
+- Added `readBodyWithLimit` utility function to prevent OOM from oversized upstream responses.
+- 新增 SSE 解析工具函数与单元测试，完善讯飞字段清理逻辑。
+- Added SSE parsing utility functions and unit tests, improved iFlytek field cleanup logic.
+- 新增异步保存接口，避免统计持久化阻塞事件循环。
+- Added async save interface to prevent stats persistence from blocking the event loop.
+- 新增 `safeParseOpenAIError` 和 `safeParseAnthropicError`，统一转换错误格式。
+- Added `safeParseOpenAIError` and `safeParseAnthropicError` for unified error format conversion.
+- 新增重置会话统计函数与持久化回调。
+- Added session stats reset function and persistence callback.
+- 新增按日统计、跨天自动翻转、格式化输出优化。
+- Added daily statistics, cross-day auto-rollover, and formatted output optimization.
+
+### Changed / 变更
+
+- 重构版本号读取逻辑，提取为 CLI 工具函数避免重复读取 `package.json`。
+- Refactored version reading logic, extracted into CLI utility to avoid repeated `package.json` reads.
+- 大幅优化请求转发流程：延迟写入响应头，统一使用 `extractUpstreamHeaders` 处理转发头。
+- Significantly optimized request forwarding: delayed response header writing, unified `extractUpstreamHeaders` for forwarding headers.
+- 重构 `cleanXfyunFields` 逻辑，使用 `JSON.parse` 替代正则避免转义引号问题。
+- Refactored `cleanXfyunFields` logic, using `JSON.parse` instead of regex to avoid escaped quote issues.
+- 重构 Ollama 代理逻辑，统一使用 `upstreamRequest` 处理请求，大幅简化代码量。
+- Refactored Ollama proxy logic, unified to use `upstreamRequest` for requests, significantly reducing code complexity.
+- 重构 stats 模块，新增按日统计、跨天自动翻转、格式化输出优化。
+- Refactored stats module with daily statistics, cross-day auto-rollover, and formatted output optimization.
+- 为代理/Anthropic/Ollama 处理添加流式请求错误兼容逻辑。
+- Added streaming request error compatibility logic for proxy/Anthropic/Ollama handlers.
+- 升级测试用例，替换 Vitest 为 Bun test 并补充统计相关测试。
+- Upgraded test cases, replaced Vitest with Bun test and added statistics-related tests.
+
+### Fixed / 修复
+
+- 修复版本解析逻辑，非数字版本段默认转为 0 避免 NaN 错误。
+- Fixed version parsing logic, non-numeric version segments default to 0 to avoid NaN errors.
+- 修复 Claude 配置读取的返回结构，统一返回格式包含解析失败标记。
+- Fixed Claude config reading return structure, unified return format includes parse failure flag.
+- 为上游非 JSON 响应添加解析失败处理逻辑。
+- Added parse failure handling logic for non-JSON upstream responses.
+- 修复流式请求错误处理，向客户端返回详细错误信息。
+- Fixed streaming request error handling, returns detailed error info to clients.
+- 为 GET 代理添加重试机制与完整的错误处理流程。
+- Added retry mechanism and complete error handling flow for GET proxy.
+
 ## [0.0.7-beta.2] - 2026-05-21
 
 ### Added / 新增
