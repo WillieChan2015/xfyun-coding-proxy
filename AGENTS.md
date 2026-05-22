@@ -32,7 +32,7 @@
 
 - `pnpm dev`：热重载开发（源码运行，需要 Bun）。
 - `pnpm start`：启动本地代理（源码运行，需要 Bun）。
-- `pnpm test`：运行测试。
+- `pnpm test`：运行测试（使用 Bun 自带 test 模块，禁止引入第三方测试框架如 Vitest、Jest）。
 - `pnpm test:coverage`：查看覆盖率。
 - `pnpm lint`：运行 ESLint。
 - `pnpm build`：编译到 `dist/`（产物面向 Node.js `>=20`）。

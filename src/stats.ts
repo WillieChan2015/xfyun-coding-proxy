@@ -3,6 +3,14 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 
 import { join } from 'node:path';
 import { EventEmitter } from 'events';
 
+export interface SessionDayStats {
+  requestCount: number;
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  retries: number;
+  errors: number;
+}
+
 export const sessionStats = {
   requestCount: 0,
   totalPromptTokens: 0,
@@ -11,6 +19,7 @@ export const sessionStats = {
   errors: 0,
   startTime: Date.now(),
   protocols: {} as Record<string, ProtocolStats>,
+  byDate: {} as Record<string, SessionDayStats>,
 };
 
 function fmtUptime(ms: number): string {
@@ -18,7 +27,10 @@ function fmtUptime(ms: number): string {
   if (sec < 60) return `${sec}s`;
   const min = Math.floor(sec / 60);
   if (min < 60) return `${min}m ${sec % 60}s`;
-  return `${Math.floor(min / 60)}h ${min % 60}m`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ${min % 60}m`;
+  const days = Math.floor(hr / 24);
+  return `${days}d ${hr % 24}h ${min % 60}m`;
 }
 
 export interface ProtocolStats {
@@ -52,12 +64,12 @@ export const dailyStats: DailyStats = {
 // 脏标记：dailyStats 被修改后置 true，避免启动后无请求退出时将加载的数据原样覆写（或加载失败时用全零覆盖已有数据）
 let dailyStatsDirty = false;
 
+function formatDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export function todayStr(): string {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return formatDate(new Date());
 }
 
 export function resolveStatsDir(logDir: string): string {
@@ -211,11 +223,11 @@ export function incrementProtocolStats(
     };
   }
   const p = stats.protocols[protocol];
-  if (delta.requestCount) p.requestCount += delta.requestCount;
-  if (delta.totalPromptTokens) p.totalPromptTokens += delta.totalPromptTokens;
-  if (delta.totalCompletionTokens) p.totalCompletionTokens += delta.totalCompletionTokens;
-  if (delta.retries) p.retries += delta.retries;
-  if (delta.errors) p.errors += delta.errors;
+  if (delta.requestCount !== undefined) p.requestCount += delta.requestCount;
+  if (delta.totalPromptTokens !== undefined) p.totalPromptTokens += delta.totalPromptTokens;
+  if (delta.totalCompletionTokens !== undefined) p.totalCompletionTokens += delta.totalCompletionTokens;
+  if (delta.retries !== undefined) p.retries += delta.retries;
+  if (delta.errors !== undefined) p.errors += delta.errors;
 }
 
 // ---- EventEmitter 事件系统 ----
@@ -239,11 +251,26 @@ export interface RequestCompleteEvent {
   error?: string;
 }
 
+// ---- 请求完成时的日期翻转回调 ----
+// 由 server.ts 在启动时通过 setRolloverFn 注入，避免 recordRequestComplete 需要感知 logDir
+let rolloverFn: (() => void) | null = null;
+
+export function setRolloverFn(fn: (() => void) | null): void {
+  rolloverFn = fn;
+}
+
 /**
  * 集中记录请求完成事件：更新 sessionStats/dailyStats + 协议统计 + 发射事件
  * 替代各 handler 中分散的 sessionStats.xxx++ / dailyStats.xxx++ / incrementProtocolStats() 调用
  */
 export function recordRequestComplete(event: RequestCompleteEvent): void {
+  // 请求跨天完成时（入口在旧日、出口在新日），先触发日期翻转
+  // 确保 dailyStats 累加到正确的日期，而非归入旧日
+  const today = todayStr();
+  if (dailyStats.date !== today && rolloverFn) {
+    rolloverFn();
+  }
+
   dailyStatsDirty = true;
   const { protocol, inputTokens, outputTokens, success, retries } = event;
 
@@ -253,6 +280,24 @@ export function recordRequestComplete(event: RequestCompleteEvent): void {
   sessionStats.totalCompletionTokens += outputTokens;
   sessionStats.retries += retries;
   if (!success) sessionStats.errors++;
+
+  // 按 session 内的实际完成日归入 byDate（用于跨天分日明细）
+  const completionDate = today;
+  if (!sessionStats.byDate[completionDate]) {
+    sessionStats.byDate[completionDate] = {
+      requestCount: 0,
+      totalPromptTokens: 0,
+      totalCompletionTokens: 0,
+      retries: 0,
+      errors: 0,
+    };
+  }
+  const dayStats = sessionStats.byDate[completionDate];
+  dayStats.requestCount++;
+  dayStats.totalPromptTokens += inputTokens;
+  dayStats.totalCompletionTokens += outputTokens;
+  dayStats.retries += retries;
+  if (!success) dayStats.errors++;
 
   // 集中更新 dailyStats
   dailyStats.requestCount++;
@@ -499,8 +544,7 @@ export function printStatsHistory(logDir: string): void {
 export function printSessionSummary(): void {
   const uptime = Date.now() - sessionStats.startTime;
   const totalTokens = sessionStats.totalPromptTokens + sessionStats.totalCompletionTokens;
-  const startDate = new Date(sessionStats.startTime);
-  const startDateStr = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`;
+  const startDateStr = formatDate(new Date(sessionStats.startTime));
   const today = todayStr();
   const dateRange = startDateStr === today ? startDateStr : `${startDateStr} ~ ${today}`;
 
@@ -517,6 +561,23 @@ export function printSessionSummary(): void {
   console.log(`  Errors:         ${sessionStats.errors}`);
   console.log(`  Uptime:         ${fmtUptime(uptime)}`);
 
+  // By Day 分日明细（跨天时展示每日贡献）
+  const byDateKeys = Object.keys(sessionStats.byDate).sort();
+  if (byDateKeys.length > 1) {
+    console.log('──────────────────────────────────────────────────');
+    console.log('  By Day:');
+    for (const date of byDateKeys) {
+      const d = sessionStats.byDate[date];
+      const dayTotal = d.totalPromptTokens + d.totalCompletionTokens;
+      console.log(`    ${date}`);
+      console.log(`      Requests:   ${d.requestCount}`);
+      console.log(`      Tokens:     ${fmtTokens(dayTotal)}`);
+      console.log(`        Input:    ${fmtTokens(d.totalPromptTokens)}`);
+      console.log(`        Output:   ${fmtTokens(d.totalCompletionTokens)}`);
+      if (d.errors > 0) console.log(`        Errors:   ${d.errors}`);
+    }
+  }
+
   const sessionProtocolKeys = Object.keys(sessionStats.protocols);
   if (sessionProtocolKeys.length > 0) {
     console.log('──────────────────────────────────────────────────');
@@ -525,23 +586,39 @@ export function printSessionSummary(): void {
     for (const name of sorted) {
       const p = sessionStats.protocols[name];
       const totalTok = p.totalPromptTokens + p.totalCompletionTokens;
-      console.log(`    ${name.padEnd(14)}${String(p.requestCount).padStart(5)} req   ${fmtTokens(totalTok).padStart(14)} tok   ${String(p.errors).padStart(1)} err`);
+      console.log(`    ${name}`);
+      console.log(`      Requests:   ${p.requestCount}`);
+      console.log(`      Tokens:     ${fmtTokens(totalTok)}`);
+      console.log(`        Input:    ${fmtTokens(p.totalPromptTokens)}`);
+      console.log(`        Output:   ${fmtTokens(p.totalCompletionTokens)}`);
+      if (p.errors > 0) console.log(`        Errors:   ${p.errors}`);
     }
   }
 
-  if (dailyStats.date) {
+  // Today 部分：仅单日运行且有实际数据时展示；
+  // 跨天时 By Day 已包含今天的明细，Today 的 cumulative 语义（含历史实例数据）容易混淆，故隐藏
+  if (byDateKeys.length <= 1 && dailyStats.date && dailyStats.requestCount > 0) {
     const totalDailyTokens = dailyStats.totalPromptTokens + dailyStats.totalCompletionTokens;
     console.log('──────────────────────────────────────────────────');
     console.log(`  Today (${dailyStats.date})`);
     console.log(`  Requests:       ${dailyStats.requestCount}`);
     console.log(`  Tokens:         ${fmtTokens(totalDailyTokens)}`);
+    console.log(`    Input:        ${fmtTokens(dailyStats.totalPromptTokens)}`);
+    console.log(`    Output:       ${fmtTokens(dailyStats.totalCompletionTokens)}`);
+    console.log(`  Retries:        ${dailyStats.retries}`);
+    console.log(`  Errors:         ${dailyStats.errors}`);
     const todayProtocolKeys = Object.keys(dailyStats.protocols);
     if (todayProtocolKeys.length > 0) {
       const sorted = todayProtocolKeys.sort((a, b) => dailyStats.protocols[b].requestCount - dailyStats.protocols[a].requestCount);
       for (const name of sorted) {
         const p = dailyStats.protocols[name];
         const totalTok = p.totalPromptTokens + p.totalCompletionTokens;
-        console.log(`    ${name.padEnd(14)}${String(p.requestCount).padStart(5)} req   ${fmtTokens(totalTok).padStart(14)} tok   ${String(p.errors).padStart(1)} err`);
+        console.log(`    ${name}`);
+        console.log(`      Requests:   ${p.requestCount}`);
+        console.log(`      Tokens:     ${fmtTokens(totalTok)}`);
+        console.log(`        Input:    ${fmtTokens(p.totalPromptTokens)}`);
+        console.log(`        Output:   ${fmtTokens(p.totalCompletionTokens)}`);
+        if (p.errors > 0) console.log(`        Errors:   ${p.errors}`);
       }
     }
   }

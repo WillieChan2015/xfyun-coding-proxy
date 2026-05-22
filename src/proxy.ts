@@ -12,6 +12,17 @@ import {
 import type { UpstreamResult } from './upstream';
 import type { RequestDiagnostics } from './upstream';
 
+/** 流式错误时通过 raw.write 写入的 SSE 错误事件格式 */
+function formatStreamErrorEvent(errMsg: string): string {
+  return `data: ${JSON.stringify({
+    error: {
+      message: `stream interrupted: ${errMsg}`,
+      type: 'upstream_error',
+      code: 500,
+    },
+  })}\n\ndata: [DONE]\n\n`;
+}
+
 // Re-exports from upstream.ts for backward compatibility with existing test imports
 export {
   isRetryableXfyunError,
@@ -140,23 +151,45 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
   });
 
   // Handle result based on errorType
+  // 流式请求中 writeHead(200) 已发送，错误分支必须通过 raw.write + raw.end 发送 SSE 错误事件，
+  // 不能调用 reply.status().send()（会触发 ERR_HTTP_HEADERS_SENT）
   if (result.errorType === 'network') {
-    reply.status(502).send(formatOpenAIError(502, `upstream request failed: ${result.error}`));
+    if (reply.raw.headersSent) {
+      reply.raw.write(formatStreamErrorEvent(`upstream request failed: ${result.error}`));
+      reply.raw.end();
+    } else {
+      reply.status(502).send(formatOpenAIError(502, `upstream request failed: ${result.error}`));
+    }
     return;
   }
 
   if (result.errorType === 'upstream') {
-    reply.status(result.status).send(result.errorBody);
+    if (reply.raw.headersSent) {
+      reply.raw.write(formatStreamErrorEvent(`upstream returned ${result.status}`));
+      reply.raw.end();
+    } else {
+      reply.status(result.status).send(result.errorBody);
+    }
     return;
   }
 
   if (result.errorType === 'empty_body') {
-    reply.status(result.status).send(formatOpenAIError(result.status, `upstream returned ${result.status} with empty body`));
+    if (reply.raw.headersSent) {
+      reply.raw.write(formatStreamErrorEvent(`upstream returned ${result.status} with empty body`));
+      reply.raw.end();
+    } else {
+      reply.status(result.status).send(formatOpenAIError(result.status, `upstream returned ${result.status} with empty body`));
+    }
     return;
   }
 
   if (result.errorType === 'no_stream_body') {
-    reply.status(result.status).send(formatOpenAIError(result.status, `upstream returned ${result.status} with no stream body`));
+    if (reply.raw.headersSent) {
+      reply.raw.write(formatStreamErrorEvent(`upstream returned ${result.status} with no stream body`));
+      reply.raw.end();
+    } else {
+      reply.status(result.status).send(formatOpenAIError(result.status, `upstream returned ${result.status} with no stream body`));
+    }
     return;
   }
 

@@ -8,7 +8,7 @@ import { handleProxy, handleGetProxy } from './proxy';
 import { handleOllamaChat, handleOllamaGenerate } from './ollama/handler';
 import { handleAnthropicMessages } from './anthropic/handler';
 import { estimateInputTokens } from './util';
-import { printSessionSummary, initDailyStats, saveDailyStats, rolloverDailyStats, dailyStats, recordRequestComplete, requestFinished, getRequestLog, statsEmitter, sessionStats, getActiveRequests, getStreamingRequests, getLatencyStats, resetDailyStats } from './stats';
+import { printSessionSummary, initDailyStats, saveDailyStats, rolloverDailyStats, dailyStats, recordRequestComplete, requestFinished, getRequestLog, statsEmitter, sessionStats, getActiveRequests, getStreamingRequests, getLatencyStats, resetDailyStats, setRolloverFn } from './stats';
 import { checkForUpdate } from './update-check';
 
 // 读取当前包版本，用于启动时更新检查
@@ -23,6 +23,9 @@ let flushTimer: ReturnType<typeof setInterval> | null = null;
 export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance> {
   // 初始化当天统计（从持久化文件加载已有数据）
   initDailyStats(cfg.logDir);
+
+  // 注入日期翻转回调，使 recordRequestComplete 在跨天完成时能自动触发 rollover
+  setRolloverFn(() => rolloverDailyStats(cfg.logDir));
 
   // 启动定时刷盘
   if (cfg.statsFlushInterval > 0) {
@@ -145,6 +148,14 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
         retries: 0,
         error: error.message,
       });
+    }
+
+    // 流式请求中 reply.raw.writeHead(200) 已发送，此时若 handler 抛出异常，
+    // Fastify 仍会进入 setErrorHandler，但 reply.status().send() 会因 headers 已发送
+    // 而抛出 ERR_HTTP_HEADERS_SENT。检测 headersSent 后直接结束 raw socket 即可。
+    if (reply.raw.headersSent) {
+      try { reply.raw.end(); } catch { /* client already closed */ }
+      return;
     }
 
     reply.status(status).send({
@@ -333,11 +344,18 @@ export async function startServer(server: FastifyInstance, cfg: ResolvedConfig):
 
   // Ink 监控面板：接管 stdout，按 q 退出时触发优雅关停
   // 优雅关停逻辑：保存 stats → 关闭 server → 退出进程
+  let shutdownStarted = false;
   const gracefulShutdown = async () => {
+    if (shutdownStarted) return;
+    shutdownStarted = true;
     if (flushTimer) {
       clearInterval(flushTimer);
       flushTimer = null;
     }
+    rolloverDailyStats(cfg.logDir);
+    // rolloverDailyStats 跨天时会将 dailyStatsDirty 重置为 false，
+    // 此时 saveDailyStats 因 !dirty 跳过保存是正确的——新一天尚无请求数据无需持久化。
+    // 若在 rollover 和 save 之间新增修改 dailyStats 的逻辑，需同步置 dirty = true。
     saveDailyStats(cfg.logDir, dailyStats);
     if (monitorHandle) {
       monitorHandle.unmount();

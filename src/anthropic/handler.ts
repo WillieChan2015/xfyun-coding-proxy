@@ -6,6 +6,17 @@ import { ANTHROPIC_SSE_EVENTS } from './types';
 import type { AnthropicUsage } from './types';
 import type { UpstreamResult, RequestDiagnostics } from '../upstream';
 
+/** 流式错误时通过 raw.write 写入的 Anthropic SSE 错误事件格式 */
+function formatStreamErrorEvent(errMsg: string): string {
+  return `event: error\ndata: ${JSON.stringify({
+    type: 'error',
+    error: {
+      type: 'api_error',
+      message: `stream interrupted: ${errMsg}`,
+    },
+  })}\n\n`;
+}
+
 /**
  * 从 Anthropic 响应中提取 token 用量
  * Anthropic 使用 input_tokens / output_tokens（非 OpenAI 的 prompt_tokens / completion_tokens）
@@ -148,24 +159,46 @@ export async function handleAnthropicMessages(
   });
 
   // Handle result based on errorType
+  // 流式请求中 writeHead(200) 已发送，错误分支必须通过 raw.write + raw.end 发送 SSE 错误事件，
+  // 不能调用 reply.status().send()（会触发 ERR_HTTP_HEADERS_SENT）
   if (result.errorType === 'network') {
-    reply.status(502).send(formatAnthropicError('api_error', `upstream request failed: ${result.error}`));
+    if (reply.raw.headersSent) {
+      reply.raw.write(formatStreamErrorEvent(`upstream request failed: ${result.error}`));
+      reply.raw.end();
+    } else {
+      reply.status(502).send(formatAnthropicError('api_error', `upstream request failed: ${result.error}`));
+    }
     return;
   }
 
   if (result.errorType === 'upstream') {
-    reply.status(result.status).send(result.errorBody);
+    if (reply.raw.headersSent) {
+      reply.raw.write(formatStreamErrorEvent(`upstream returned ${result.status}`));
+      reply.raw.end();
+    } else {
+      reply.status(result.status).send(result.errorBody);
+    }
     return;
   }
 
   if (result.errorType === 'empty_body') {
     const status = result.status === 502 ? 500 : result.status;
-    reply.status(status).send(formatAnthropicError('api_error', `upstream returned ${result.status} with empty body`));
+    if (reply.raw.headersSent) {
+      reply.raw.write(formatStreamErrorEvent(`upstream returned ${result.status} with empty body`));
+      reply.raw.end();
+    } else {
+      reply.status(status).send(formatAnthropicError('api_error', `upstream returned ${result.status} with empty body`));
+    }
     return;
   }
 
   if (result.errorType === 'no_stream_body') {
-    reply.status(result.status).send(formatAnthropicError('api_error', `upstream returned ${result.status} with no stream body`));
+    if (reply.raw.headersSent) {
+      reply.raw.write(formatStreamErrorEvent(`upstream returned ${result.status} with no stream body`));
+      reply.raw.end();
+    } else {
+      reply.status(result.status).send(formatAnthropicError('api_error', `upstream returned ${result.status} with no stream body`));
+    }
     return;
   }
 

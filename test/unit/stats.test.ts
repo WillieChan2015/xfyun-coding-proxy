@@ -18,6 +18,8 @@ import {
   printDailyStats,
   printStatsHistory,
   printSessionSummary,
+  recordRequestComplete,
+  setRolloverFn,
 } from '../../src/stats';
 
 const TMP_DIR = join(import.meta.dir, '..', 'tmp-stats-test');
@@ -365,10 +367,12 @@ describe('printSessionSummary with protocols', () => {
       anthropic: { requestCount: 3, totalPromptTokens: 300, totalCompletionTokens: 200, retries: 0, errors: 0 },
     };
     const output = captureOutput(() => printSessionSummary());
-    expect(output).toMatch(/openai\s+7 req/);
-    expect(output).toMatch(/anthropic\s+3 req/);
-    expect(output).toContain('1.0k(1,000) tok');
-    expect(output).toContain('500 tok');
+    expect(output).toContain('openai');
+    expect(output).toContain('Requests:   7');
+    expect(output).toContain('anthropic');
+    expect(output).toContain('Requests:   3');
+    expect(output).toContain('1.0k(1,000)');
+    expect(output).toContain('500');
 
     // Reset
     dailyStats.date = origDate;
@@ -381,5 +385,224 @@ describe('printSessionSummary with protocols', () => {
   it('omits By Protocol when protocols is empty', () => {
     const output = captureOutput(() => printSessionSummary());
     expect(output).not.toContain('By Protocol:');
+  });
+});
+
+describe('sessionStats.byDate', () => {
+  beforeEach(() => {
+    sessionStats.byDate = {};
+  });
+
+  afterEach(() => {
+    sessionStats.requestCount = 0;
+    sessionStats.totalPromptTokens = 0;
+    sessionStats.totalCompletionTokens = 0;
+    sessionStats.retries = 0;
+    sessionStats.errors = 0;
+    sessionStats.protocols = {};
+    sessionStats.byDate = {};
+  });
+
+  it('initializes with empty byDate', () => {
+    expect(sessionStats.byDate).toEqual({});
+  });
+
+  it('recordRequestComplete populates byDate for today', () => {
+    const today = todayStr();
+    recordRequestComplete({
+      protocol: 'openai',
+      model: 'gpt-4',
+      inputTokens: 100,
+      outputTokens: 50,
+      latencyMs: 500,
+      success: true,
+      retries: 0,
+    });
+    expect(sessionStats.byDate[today]).toBeDefined();
+    expect(sessionStats.byDate[today].requestCount).toBe(1);
+    expect(sessionStats.byDate[today].totalPromptTokens).toBe(100);
+    expect(sessionStats.byDate[today].totalCompletionTokens).toBe(50);
+  });
+
+  it('recordRequestComplete accumulates into existing byDate entry', () => {
+    const today = todayStr();
+    recordRequestComplete({
+      protocol: 'openai',
+      model: 'gpt-4',
+      inputTokens: 100,
+      outputTokens: 50,
+      latencyMs: 500,
+      success: true,
+      retries: 0,
+    });
+    recordRequestComplete({
+      protocol: 'anthropic',
+      model: 'claude-3',
+      inputTokens: 200,
+      outputTokens: 80,
+      latencyMs: 800,
+      success: false,
+      retries: 1,
+    });
+    expect(sessionStats.byDate[today].requestCount).toBe(2);
+    expect(sessionStats.byDate[today].totalPromptTokens).toBe(300);
+    expect(sessionStats.byDate[today].totalCompletionTokens).toBe(130);
+    expect(sessionStats.byDate[today].errors).toBe(1);
+    expect(sessionStats.byDate[today].retries).toBe(1);
+  });
+});
+
+describe('setRolloverFn / cross-day rollover guard', () => {
+  afterEach(() => {
+    setRolloverFn(null);
+    sessionStats.requestCount = 0;
+    sessionStats.totalPromptTokens = 0;
+    sessionStats.totalCompletionTokens = 0;
+    sessionStats.retries = 0;
+    sessionStats.errors = 0;
+    sessionStats.protocols = {};
+    sessionStats.byDate = {};
+    dailyStats.requestCount = 0;
+    dailyStats.totalPromptTokens = 0;
+    dailyStats.totalCompletionTokens = 0;
+    dailyStats.retries = 0;
+    dailyStats.errors = 0;
+    dailyStats.protocols = {};
+  });
+
+  it('calls rolloverFn when dailyStats.date differs from today', () => {
+    const origDate = dailyStats.date;
+    let rolloverCalled = false;
+    setRolloverFn(() => { rolloverCalled = true; });
+
+    dailyStats.date = '2020-01-01';
+    recordRequestComplete({
+      protocol: 'openai',
+      model: 'gpt-4',
+      inputTokens: 100,
+      outputTokens: 50,
+      latencyMs: 500,
+      success: true,
+      retries: 0,
+    });
+    expect(rolloverCalled).toBe(true);
+
+    dailyStats.date = origDate;
+  });
+
+  it('does not call rolloverFn when dailyStats.date matches today', () => {
+    let rolloverCalled = false;
+    setRolloverFn(() => { rolloverCalled = true; });
+
+    dailyStats.date = todayStr();
+    recordRequestComplete({
+      protocol: 'openai',
+      model: 'gpt-4',
+      inputTokens: 100,
+      outputTokens: 50,
+      latencyMs: 500,
+      success: true,
+      retries: 0,
+    });
+    expect(rolloverCalled).toBe(false);
+  });
+
+  it('does not call rolloverFn when fn is null', () => {
+    setRolloverFn(null);
+    const origDate = dailyStats.date;
+    dailyStats.date = '2020-01-01';
+
+    expect(() => {
+      recordRequestComplete({
+        protocol: 'openai',
+        model: 'gpt-4',
+        inputTokens: 100,
+        outputTokens: 50,
+        latencyMs: 500,
+        success: true,
+        retries: 0,
+      });
+    }).not.toThrow();
+
+    dailyStats.date = origDate;
+  });
+});
+
+describe('printSessionSummary By Day section', () => {
+  afterEach(() => {
+    sessionStats.requestCount = 0;
+    sessionStats.totalPromptTokens = 0;
+    sessionStats.totalCompletionTokens = 0;
+    sessionStats.retries = 0;
+    sessionStats.errors = 0;
+    sessionStats.protocols = {};
+    sessionStats.byDate = {};
+  });
+
+  it('shows By Day when multiple dates exist in byDate', () => {
+    sessionStats.requestCount = 150;
+    sessionStats.totalPromptTokens = 400000;
+    sessionStats.totalCompletionTokens = 100000;
+    sessionStats.retries = 2;
+    sessionStats.errors = 1;
+    sessionStats.byDate = {
+      '2026-05-21': { requestCount: 100, totalPromptTokens: 350000, totalCompletionTokens: 50000, retries: 1, errors: 0 },
+      '2026-05-22': { requestCount: 50, totalPromptTokens: 50000, totalCompletionTokens: 50000, retries: 1, errors: 1 },
+    };
+    const output = captureOutput(() => printSessionSummary());
+    expect(output).toContain('By Day:');
+    expect(output).toContain('2026-05-21');
+    expect(output).toContain('2026-05-22');
+  });
+
+  it('omits By Day when only one date exists in byDate', () => {
+    sessionStats.requestCount = 10;
+    sessionStats.totalPromptTokens = 5000;
+    sessionStats.totalCompletionTokens = 1000;
+    sessionStats.byDate = {
+      [todayStr()]: { requestCount: 10, totalPromptTokens: 5000, totalCompletionTokens: 1000, retries: 0, errors: 0 },
+    };
+    const output = captureOutput(() => printSessionSummary());
+    expect(output).not.toContain('By Day:');
+  });
+
+  it('omits By Day when byDate is empty', () => {
+    const output = captureOutput(() => printSessionSummary());
+    expect(output).not.toContain('By Day:');
+  });
+});
+
+describe('printSessionSummary Today section with zero requests', () => {
+  afterEach(() => {
+    sessionStats.requestCount = 0;
+    sessionStats.totalPromptTokens = 0;
+    sessionStats.totalCompletionTokens = 0;
+    sessionStats.retries = 0;
+    sessionStats.errors = 0;
+    sessionStats.protocols = {};
+    sessionStats.byDate = {};
+    dailyStats.requestCount = 0;
+    dailyStats.totalPromptTokens = 0;
+    dailyStats.totalCompletionTokens = 0;
+    dailyStats.retries = 0;
+    dailyStats.errors = 0;
+    dailyStats.protocols = {};
+  });
+
+  it('hides Today section when dailyStats.requestCount is 0', () => {
+    dailyStats.date = todayStr();
+    dailyStats.requestCount = 0;
+    const output = captureOutput(() => printSessionSummary());
+    expect(output).not.toContain('Today');
+  });
+
+  it('shows Today section when dailyStats.requestCount > 0', () => {
+    dailyStats.date = todayStr();
+    dailyStats.requestCount = 5;
+    dailyStats.totalPromptTokens = 1000;
+    dailyStats.totalCompletionTokens = 500;
+    const output = captureOutput(() => printSessionSummary());
+    expect(output).toContain('Today');
+    expect(output).toContain('5');
   });
 });

@@ -507,6 +507,8 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
     diagnostics,
   } = options;
 
+  // 入口 rollover：确保 dailyStats 在请求处理前已切换到当天；
+  // 出口 rollover（recordRequestComplete 内）处理跨天完成的边界情况，两者互补
   rolloverDailyStats(config.logDir);
   requestStarted();
 

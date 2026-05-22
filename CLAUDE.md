@@ -18,7 +18,7 @@ pnpm lint:fix       # ESLint 自动修复
 pnpm release:prepare # 版本准备（bump + changelog + tag）
 ```
 
-运行单个测试：`npx vitest run test/unit/stats.test.ts`
+运行单个测试：`bun test test/unit/stats.test.ts`
 
 ## Architecture
 
@@ -60,6 +60,8 @@ src/
 - Git 提交信息格式：`type: description`（feat/fix/chore/docs/refactor）
 - 发布标签格式：`v{version}`（如 `v0.0.5-beta.3`）
 - 环境变量配置优先于默认值，见 `config.ts` 和 `.env.example`
+- 禁止使用第三方测试框架（如 Vitest、Jest），本项目使用 Bun 自带 test 模块（`bun test`）。
 - 默认使用中文回复，思考过程也用中文；只有在用户明确要求时才切换语言。
 - 遵循最小改动原则：只修改与当前任务直接相关的代码，不顺手重构无关区域。
 - 对新增导出、兼容逻辑、边界条件补充简洁注释，重点解释“为什么这样做”。
+
