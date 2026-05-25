@@ -1,7 +1,7 @@
 import { fmtTokens } from './util';
-import { todayStr, formatStatsLine } from './stats-store';
+import { todayStr, formatStatsLine, formatDate } from './stats-store';
 import { loadDailyStats, listStatsDates } from './stats-persistence';
-import type { DailyStats } from './stats-store';
+import type { DailyStats } from './stats-types';
 import { sessionStats, dailyStats } from './stats-store';
 
 // ---- 格式化工具函数 ----
@@ -146,10 +146,4 @@ export function printSessionSummary(): void {
 
   console.log('════════════════════════════════════════════════');
   console.log('');
-}
-
-// ---- 辅助函数 ----
-
-function formatDate(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }

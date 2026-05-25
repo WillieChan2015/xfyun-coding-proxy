@@ -1148,18 +1148,24 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
 
 // ---- 通用结果处理函数 ----
 
+export interface ReplyLike {
+  raw: { headersSent: boolean; write: (data: string) => void; end: () => void };
+  status: (code: number) => { send: (body: unknown) => void };
+}
+
 export interface ErrorFormatters {
   formatStreamErrorEvent: (errMsg: string) => string;
   formatNetworkErrorReply: (errMsg: string) => unknown;
   formatUpstreamErrorReply: (status: number, errorBody: string | null) => unknown;
   formatEmptyBodyErrorReply: (status: number) => unknown;
   formatNoStreamBodyErrorReply: (status: number) => unknown;
+  formatNonStreamSuccess?: (result: UpstreamResult) => unknown;
 }
 
 export function handleUpstreamResult(
   result: UpstreamResult,
   isStream: boolean,
-  reply: { raw: { headersSent: boolean; write: (data: string) => void; end: () => void }; status: (code: number) => { send: (body: unknown) => void } },
+  reply: ReplyLike,
   formatters: ErrorFormatters,
 ): void {
   if (result.errorType === 'network') {
@@ -1211,5 +1217,10 @@ export function handleUpstreamResult(
   }
 
   // 非流式成功
-  reply.status(result.status).send(result.responseBody);
+  if (formatters.formatNonStreamSuccess) {
+    const body = formatters.formatNonStreamSuccess(result);
+    reply.status(result.status).send(body);
+  } else {
+    reply.status(result.status).send(result.responseBody);
+  }
 }

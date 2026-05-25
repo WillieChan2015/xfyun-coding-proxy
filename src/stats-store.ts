@@ -1,51 +1,14 @@
 import { EventEmitter } from 'events';
 import { loadDailyStats, saveDailyStatsForce } from './stats-persistence';
 import { fmtTokens } from './util';
-
-// ---- 类型定义 ----
-
-export interface SessionDayStats {
-  requestCount: number;
-  totalPromptTokens: number;
-  totalCompletionTokens: number;
-  retries: number;
-  errors: number;
-}
-
-export interface ProtocolStats {
-  requestCount: number;
-  totalPromptTokens: number;
-  totalCompletionTokens: number;
-  retries: number;
-  errors: number;
-}
-
-export interface DailyStats {
-  date: string;
-  requestCount: number;
-  totalPromptTokens: number;
-  totalCompletionTokens: number;
-  retries: number;
-  errors: number;
-  protocols: Record<string, ProtocolStats>;
-}
-
-export type Protocol = 'openai' | 'anthropic' | 'ollama';
-
-export interface RequestCompleteEvent {
-  protocol: Protocol;
-  model: string;
-  inputTokens: number;
-  outputTokens: number;
-  latencyMs: number;
-  success: boolean;
-  retries: number;
-  stream?: boolean;
-  requestId?: string;
-  path?: string;
-  ua?: string;
-  error?: string;
-}
+import type {
+  SessionDayStats,
+  ProtocolStats,
+  DailyStats,
+  Protocol,
+  RequestCompleteEvent,
+  RequestLogEntry,
+} from './stats-types';
 
 // ---- 会话级统计 ----
 
@@ -110,7 +73,7 @@ export function resetDailyStatsFields(date: string): void {
 
 // ---- 日期工具函数 ----
 
-function formatDate(d: Date): string {
+export function formatDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
@@ -130,16 +93,16 @@ let saveFn: ((stats: DailyStats) => void) | null = null;
 let rolloverFnSet = false;
 let saveFnSet = false;
 
-export function setRolloverFn(fn: (() => void) | null): void {
-  if (rolloverFnSet && fn !== null) {
+export function setRolloverFn(fn: (() => void) | null, force = false): void {
+  if (rolloverFnSet && fn !== null && !force) {
     console.warn('setRolloverFn: rolloverFn already set, overwriting');
   }
   rolloverFn = fn;
   rolloverFnSet = true;
 }
 
-export function setSaveFn(fn: ((stats: DailyStats) => void) | null): void {
-  if (saveFnSet && fn !== null) {
+export function setSaveFn(fn: ((stats: DailyStats) => void) | null, force = false): void {
+  if (saveFnSet && fn !== null && !force) {
     console.warn('setSaveFn: saveFn already set, overwriting');
   }
   saveFn = fn;
@@ -168,25 +131,6 @@ export function incrementProtocolStats(
   if (delta.totalCompletionTokens !== undefined) p.totalCompletionTokens += delta.totalCompletionTokens;
   if (delta.retries !== undefined) p.retries += delta.retries;
   if (delta.errors !== undefined) p.errors += delta.errors;
-}
-
-// ---- 请求日志类型定义 ----
-
-export interface RequestLogEntry {
-  timestamp: number;
-  method: string;
-  path: string;
-  protocol: Protocol;
-  model: string;
-  latencyMs: number;
-  inputTokens: number;
-  outputTokens: number;
-  success: boolean;
-  stream?: boolean;
-  pending?: boolean;
-  requestId?: string;
-  ua?: string;
-  error?: string;
 }
 
 // ---- 并发追踪 ----
@@ -223,10 +167,11 @@ export function getStreamingRequests(): number {
 export const LATENCY_WINDOW_SIZE = 1000;
 
 /** 环形缓冲区，避免 Array.shift() 的 O(n) 操作 */
-class RingBuffer<T> {
+export class RingBuffer<T> {
   private buffer: T[];
   private head = 0;
   private _size = 0;
+  private _version = 0;
 
   constructor(private capacity: number) {
     this.buffer = new Array(capacity);
@@ -236,6 +181,7 @@ class RingBuffer<T> {
     this.buffer[this.head] = item;
     this.head = (this.head + 1) % this.capacity;
     if (this._size < this.capacity) this._size++;
+    this._version++;
   }
 
   toArray(): T[] {
@@ -244,34 +190,37 @@ class RingBuffer<T> {
   }
 
   get length(): number { return this._size; }
+  get version(): number { return this._version; }
 }
 
 export const latencyWindow = new RingBuffer<number>(LATENCY_WINDOW_SIZE);
 
 // 缓存排序结果，避免每次调用 getLatencyStats() 都重新排序
 let cachedLatencyStats: { avg: number; p95: number } | null = null;
-let lastLatencyWindowSize = 0;
+let lastLatencyWindowVersion = -1;
 
 export function getLatencyStats(): { avg: number; p95: number } {
   if (latencyWindow.length === 0) return { avg: 0, p95: 0 };
-  if (latencyWindow.length === lastLatencyWindowSize && cachedLatencyStats) {
+  if (latencyWindow.version === lastLatencyWindowVersion && cachedLatencyStats) {
     return cachedLatencyStats;
   }
   const sorted = latencyWindow.toArray().sort((a, b) => a - b);
   const avg = sorted.reduce((s, v) => s + v, 0) / sorted.length;
   const p95Idx = Math.ceil(sorted.length * 0.95) - 1;
   cachedLatencyStats = { avg: Math.round(avg), p95: sorted[p95Idx] };
-  lastLatencyWindowSize = latencyWindow.length;
+  lastLatencyWindowVersion = latencyWindow.version;
   return cachedLatencyStats;
 }
 
 // ---- 请求日志缓冲区（环形） ----
 
 export const LOG_BUFFER_SIZE = 100;
-export const requestLog: RequestLogEntry[] = [];
+export const requestLog = new RingBuffer<RequestLogEntry>(LOG_BUFFER_SIZE);
+// pending 条目原始时间戳：requestId → 请求开始时的 Date.now()
+const pendingTimestamps = new Map<string, number>();
 
 export function getRequestLog(): ReadonlyArray<RequestLogEntry> {
-  return requestLog;
+  return requestLog.toArray();
 }
 
 // ---- 请求记录函数 ----
@@ -343,12 +292,8 @@ export function recordRequestComplete(event: RequestCompleteEvent): void {
   latencyWindow.push(event.latencyMs);
 
   // 请求日志缓冲区：查找并更新 pending 条目，或新增
-  const pendingIdx = event.requestId
-    ? requestLog.findIndex(e => e.pending && e.requestId === event.requestId)
-    : -1;
-
   const logEntry: RequestLogEntry = {
-    timestamp: pendingIdx >= 0 ? requestLog[pendingIdx].timestamp : Date.now(),
+    timestamp: Date.now(),
     method: 'POST',
     path: event.path ?? `/${event.protocol}`,
     protocol: event.protocol,
@@ -363,22 +308,21 @@ export function recordRequestComplete(event: RequestCompleteEvent): void {
     ...(event.error ? { error: event.error } : {}),
   };
 
-  if (pendingIdx >= 0) {
-    requestLog[pendingIdx] = logEntry;
-  } else {
-    requestLog.push(logEntry);
-    if (requestLog.length > LOG_BUFFER_SIZE) {
-      requestLog.shift();
-    }
+  if (event.requestId && pendingTimestamps.has(event.requestId)) {
+    logEntry.timestamp = pendingTimestamps.get(event.requestId)!;
+    pendingTimestamps.delete(event.requestId);
   }
+
+  requestLog.push(logEntry);
 }
 
 /**
  * 记录请求开始事件：推入 pending 日志条目 + 发射事件
  */
 export function recordRequestStart(protocol: Protocol, model: string, requestId?: string, path?: string, ua?: string, stream?: boolean): void {
+  const now = Date.now();
   const entry: RequestLogEntry = {
-    timestamp: Date.now(),
+    timestamp: now,
     method: 'POST',
     path: path ?? `/${protocol}`,
     protocol,
@@ -393,8 +337,8 @@ export function recordRequestStart(protocol: Protocol, model: string, requestId?
     ...(ua ? { ua } : {}),
   };
   requestLog.push(entry);
-  if (requestLog.length > LOG_BUFFER_SIZE) {
-    requestLog.shift();
+  if (requestId) {
+    pendingTimestamps.set(requestId, now);
   }
   statsEmitter.emit('request:start', { protocol, model, requestId });
 }

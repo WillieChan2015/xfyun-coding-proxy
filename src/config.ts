@@ -28,11 +28,7 @@ export const configSchema = z.object({
 
 export type ResolvedConfig = z.infer<typeof configSchema>;
 
-// 模块级 config：loadConfig() 调用后赋值，proxy.ts 等通过 import { config } 读取
-// 初始值提供合理默认，避免测试中 import 时为 undefined
-// ⚠️ 注意：apiKey 初始为空字符串，使用前必须调用 loadConfig() + validateConfig() 初始化，
-// 否则上游请求会因缺少凭据而返回 401
-export let config: ResolvedConfig = {
+const DEFAULT_CONFIG: ResolvedConfig = {
   port: 3000,
   apiKey: '',
   baseUrl: 'https://maas-coding-api.cn-huabei-1.xf-yun.com/v2',
@@ -48,6 +44,12 @@ export let config: ResolvedConfig = {
   upstreamFetchTimeout: 300_000,
   configFile: undefined,
 };
+
+// 模块级 config：loadConfig() 调用后赋值，proxy.ts 等通过 import { config } 读取
+// 初始值提供合理默认，避免测试中 import 时为 undefined
+// ⚠️ 注意：apiKey 初始为空字符串，使用前必须调用 loadConfig() + validateConfig() 初始化，
+// 否则上游请求会因缺少凭据而返回 401
+export let config: ResolvedConfig = { ...DEFAULT_CONFIG };
 
 /**
  * 按优先级查找配置文件：
@@ -178,20 +180,5 @@ export async function promptMissingConfig(cfg: ResolvedConfig): Promise<Resolved
  * 在测试的 beforeEach 中调用，避免测试间互相污染
  */
 export function resetConfigForTesting(): void {
-  config = {
-    port: 3000,
-    apiKey: '',
-    baseUrl: 'https://maas-coding-api.cn-huabei-1.xf-yun.com/v2',
-    anthropicBaseUrl: 'https://maas-coding-api.cn-huabei-1.xf-yun.com/anthropic',
-    maxRetries: 3,
-    retryDelay: 1000,
-    verbose: false,
-    monitor: true,
-    logDir: './logs',
-    statsDir: './logs/stats',
-    statsFlushInterval: 60_000,
-    streamReadTimeout: 60_000,
-    upstreamFetchTimeout: 300_000,
-    configFile: undefined,
-  };
+  config = { ...DEFAULT_CONFIG };
 }

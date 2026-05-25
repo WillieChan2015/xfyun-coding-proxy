@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { DailyStats, ProtocolStats } from './stats-store';
+import type { DailyStats, ProtocolStats } from './stats-types';
 
 // ---- 路径工具函数 ----
 

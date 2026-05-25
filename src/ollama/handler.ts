@@ -231,14 +231,13 @@ async function handleOllamaProxy(
     },
     formatEmptyBodyErrorReply: (status) => ({ error: `upstream returned ${status} with empty body` }),
     formatNoStreamBodyErrorReply: (status) => ({ error: `upstream returned ${status} with no stream body` }),
+    formatNonStreamSuccess: (result) => {
+      if (result.responseBody) {
+        return endpoint === 'chat'
+          ? convertChatResponse(result.responseBody)
+          : convertGenerateResponse(result.responseBody);
+      }
+      return result.responseBody;
+    },
   });
-
-  // 非流式成功：将 OpenAI 响应转换为 Ollama 格式（handleUpstreamResult 已处理其他情况）
-  if (!isStream && result.success && result.responseBody) {
-    const ollamaResponse =
-      endpoint === 'chat'
-        ? convertChatResponse(result.responseBody)
-        : convertGenerateResponse(result.responseBody);
-    reply.status(result.status).send(ollamaResponse);
-  }
 }

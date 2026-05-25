@@ -120,4 +120,42 @@ describe('Proxy Integration', () => {
       await server.close();
     }
   });
+
+  it('POST /v1/chat/completions with stream=true returns response', async () => {
+    const server = await createServer(testConfig);
+    try {
+      const res = await server.inject({
+        method: 'POST',
+        url: '/v1/chat/completions',
+        payload: {
+          model: 'test',
+          messages: [{ role: 'user', content: 'hello' }],
+          stream: true,
+        },
+      });
+      // 流式请求可能返回 200、500 或 502（上游不可达）
+      expect([200, 500, 502]).toContain(res.statusCode);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('POST /anthropic/v1/messages returns response', async () => {
+    const server = await createServer(testConfig);
+    try {
+      const res = await server.inject({
+        method: 'POST',
+        url: '/anthropic/v1/messages',
+        payload: {
+          model: 'test',
+          messages: [{ role: 'user', content: 'hello' }],
+          max_tokens: 100,
+        },
+      });
+      // Anthropic 请求可能返回 200、500 或 502（上游不可达）
+      expect([200, 500, 502]).toContain(res.statusCode);
+    } finally {
+      await server.close();
+    }
+  });
 });

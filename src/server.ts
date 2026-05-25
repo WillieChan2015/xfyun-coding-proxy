@@ -70,9 +70,9 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
   initDailyStats(cfg.logDir);
 
   // 注入日期翻转回调，使 recordRequestComplete 在跨天完成时能自动触发 rollover
-  setRolloverFn(() => rolloverDailyStats(cfg.logDir));
+  setRolloverFn(() => rolloverDailyStats(cfg.logDir), true);
   // 注入保存回调，使 resetDailyStats 在重置前能先持久化当前数据
-  setSaveFn((stats) => saveDailyStats(cfg.logDir, stats, dailyStats, isDailyStatsDirty, setDailyStatsDirty));
+  setSaveFn((stats) => saveDailyStats(cfg.logDir, stats, dailyStats, isDailyStatsDirty, setDailyStatsDirty), true);
 
   // 启动定时刷盘（异步版本，避免阻塞事件循环）
   if (cfg.statsFlushInterval > 0) {
