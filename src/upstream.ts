@@ -23,11 +23,21 @@ export const RETRYABLE_XFYUN_CODES = new Set([10012, 10010, 11210]);
 /**
  * 检测响应体是否包含讯飞可重试错误码
  * 讯飞的错误格式为 {"code": 10012, "msg": "..."}，可能出现在 HTTP 200 的响应中
+ * 优先使用 JSON parse 确保准确性，失败时 fallback 到字符串匹配
  */
 export function isRetryableXfyunError(responseBody: string): boolean {
-  for (const code of RETRYABLE_XFYUN_CODES) {
-    if (responseBody.includes(`"code":${code}`) || responseBody.includes(`"code": ${code}`)) {
+  // 先尝试 JSON parse
+  try {
+    const parsed = JSON.parse(responseBody);
+    if (typeof parsed.code === 'number' && RETRYABLE_XFYUN_CODES.has(parsed.code)) {
       return true;
+    }
+  } catch {
+    // JSON parse 失败，fallback 到字符串匹配
+    for (const code of RETRYABLE_XFYUN_CODES) {
+      if (responseBody.includes(`"code":${code}`) || responseBody.includes(`"code": ${code}`)) {
+        return true;
+      }
     }
   }
   return false;
@@ -626,7 +636,6 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
   requestStarted();
 
   const startTime = Date.now();
-  // const model = body?.model as string ?? 'unknown';
   const model = DEFAULT_MODEL;
   const ua = typeof reqInfo.headers['user-agent'] === 'string'
     ? reqInfo.headers['user-agent']
@@ -1135,4 +1144,72 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
     outputTokens: usageInfo.completionTokens ?? 0,
     durationMs,
   };
+}
+
+// ---- 通用结果处理函数 ----
+
+export interface ErrorFormatters {
+  formatStreamErrorEvent: (errMsg: string) => string;
+  formatNetworkErrorReply: (errMsg: string) => unknown;
+  formatUpstreamErrorReply: (status: number, errorBody: string | null) => unknown;
+  formatEmptyBodyErrorReply: (status: number) => unknown;
+  formatNoStreamBodyErrorReply: (status: number) => unknown;
+}
+
+export function handleUpstreamResult(
+  result: UpstreamResult,
+  isStream: boolean,
+  reply: { raw: { headersSent: boolean; write: (data: string) => void; end: () => void }; status: (code: number) => { send: (body: unknown) => void } },
+  formatters: ErrorFormatters,
+): void {
+  if (result.errorType === 'network') {
+    if (reply.raw.headersSent) {
+      reply.raw.write(formatters.formatStreamErrorEvent(`upstream request failed: ${result.error}`));
+      reply.raw.end();
+    } else {
+      reply.status(502).send(formatters.formatNetworkErrorReply(result.error ?? 'unknown'));
+    }
+    return;
+  }
+
+  if (result.errorType === 'upstream') {
+    if (reply.raw.headersSent) {
+      reply.raw.write(formatters.formatStreamErrorEvent(`upstream returned ${result.status}`));
+      reply.raw.end();
+    } else {
+      reply.status(result.status).send(formatters.formatUpstreamErrorReply(result.status, result.errorBody));
+    }
+    return;
+  }
+
+  if (result.errorType === 'empty_body') {
+    if (reply.raw.headersSent) {
+      reply.raw.write(formatters.formatStreamErrorEvent(`upstream returned ${result.status} with empty body`));
+      reply.raw.end();
+    } else {
+      reply.status(result.status).send(formatters.formatEmptyBodyErrorReply(result.status));
+    }
+    return;
+  }
+
+  if (result.errorType === 'no_stream_body') {
+    if (reply.raw.headersSent) {
+      reply.raw.write(formatters.formatStreamErrorEvent(`upstream returned ${result.status} with no stream body`));
+      reply.raw.end();
+    } else {
+      reply.status(result.status).send(formatters.formatNoStreamBodyErrorReply(result.status));
+    }
+    return;
+  }
+
+  if (result.errorType === 'stream_error') {
+    return;
+  }
+
+  if (isStream && result.success) {
+    return;
+  }
+
+  // 非流式成功
+  reply.status(result.status).send(result.responseBody);
 }

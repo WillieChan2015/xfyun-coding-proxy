@@ -37,10 +37,7 @@ export function writeCache(cacheDir: string, data: CacheData): void {
 /** 从 npm registry 获取最新版本号，超时或失败返回 null */
 export async function fetchLatestVersion(): Promise<string | null> {
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    const res = await fetch(REGISTRY_URL, { signal: controller.signal });
-    clearTimeout(timer);
+    const res = await fetch(REGISTRY_URL, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (!res.ok) return null;
     const data = await res.json() as { version?: string };
     return data.version ?? null;

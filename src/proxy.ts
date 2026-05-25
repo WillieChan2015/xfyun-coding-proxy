@@ -3,6 +3,7 @@ import { formatOpenAIError } from './errors';
 import { config, DEFAULT_MODEL } from './config';
 import { recordRequestComplete, requestStarted, requestFinished, Protocol } from './stats';
 import { readBodyWithLimit, extractUpstreamHeaders } from './util';
+import { isChatCompletionRequest } from './types/openai';
 import {
   upstreamRequest,
   extractStreamUsage,
@@ -11,6 +12,7 @@ import {
   summarizeRequestDiagnostics,
   cleanXfyunFieldsObj,
   fetchWithRetry,
+  handleUpstreamResult,
 } from './upstream';
 import type { UpstreamResult } from './upstream';
 import type { RequestDiagnostics } from './upstream';
@@ -84,6 +86,11 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
   const protocol = request.url.startsWith('/ollama/') ? 'ollama' : 'openai';
   const body = request.body as Record<string, unknown> | undefined;
 
+  // 使用类型守卫验证请求体
+  if (body && !isChatCompletionRequest(body)) {
+    request.log.warn('Request body does not match ChatCompletionRequest schema');
+  }
+
   const isStream = body?.stream === true || body?.stream === 'true';
   if (body && typeof body.stream === 'string') {
     body.stream = body.stream === 'true';
@@ -153,61 +160,18 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
 
   // Handle result based on errorType
   // upstreamRequest 已延迟 writeHead，错误分支可直接用 reply.status().send()
-  if (result.errorType === 'network') {
-    if (reply.raw.headersSent) {
-      reply.raw.write(formatStreamErrorEvent(`upstream request failed: ${result.error}`));
-      reply.raw.end();
-    } else {
-      reply.status(502).send(formatOpenAIError(502, `upstream request failed: ${result.error}`));
-    }
-    return;
-  }
-
-  if (result.errorType === 'upstream') {
-    if (reply.raw.headersSent) {
-      reply.raw.write(formatStreamErrorEvent(`upstream returned ${result.status}`));
-      reply.raw.end();
-    } else {
+  handleUpstreamResult(result, isStream, reply, {
+    formatStreamErrorEvent,
+    formatNetworkErrorReply: (errMsg) => formatOpenAIError(502, `upstream request failed: ${errMsg}`),
+    formatUpstreamErrorReply: (status, errorBody) => {
       // 上游返回非 2xx，errorBody 可能是讯飞格式而非 OpenAI 格式，
       // 统一包装为 OpenAI 错误格式，确保 IDE 能正确解析
-      const parsed = safeParseOpenAIError(result.errorBody ?? '', result.status);
-      reply.status(parsed.status).send(parsed.body);
-    }
-    return;
-  }
-
-  if (result.errorType === 'empty_body') {
-    if (reply.raw.headersSent) {
-      reply.raw.write(formatStreamErrorEvent(`upstream returned ${result.status} with empty body`));
-      reply.raw.end();
-    } else {
-      reply.status(result.status).send(formatOpenAIError(result.status, `upstream returned ${result.status} with empty body`));
-    }
-    return;
-  }
-
-  if (result.errorType === 'no_stream_body') {
-    if (reply.raw.headersSent) {
-      reply.raw.write(formatStreamErrorEvent(`upstream returned ${result.status} with no stream body`));
-      reply.raw.end();
-    } else {
-      reply.status(result.status).send(formatOpenAIError(result.status, `upstream returned ${result.status} with no stream body`));
-    }
-    return;
-  }
-
-  // Stream errors are already handled by rawReply.write in upstreamRequest
-  if (result.errorType === 'stream_error') {
-    return;
-  }
-
-  // Stream success — already handled by rawReply in upstreamRequest
-  if (isStream && result.success) {
-    return;
-  }
-
-  // Non-stream success
-  reply.status(result.status).send(result.responseBody);
+      const parsed = safeParseOpenAIError(errorBody ?? '', status);
+      return parsed.body;
+    },
+    formatEmptyBodyErrorReply: (status) => formatOpenAIError(status, `upstream returned ${status} with empty body`),
+    formatNoStreamBodyErrorReply: (status) => formatOpenAIError(status, `upstream returned ${status} with no stream body`),
+  });
 }
 
 /**

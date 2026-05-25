@@ -105,6 +105,7 @@ export function loadConfig(cliOpts: CliOptions): ResolvedConfig {
   const envFile = resolveEnvFile(cliOpts.config);
   if (envFile) dotenv.config({ path: envFile });
 
+  const resolvedLogDir = resolveLogDir(cliOpts.logDir);
   const resolved: ResolvedConfig = {
     port: cliOpts.port ?? parseInt(process.env.PORT || '3000', 10),
     apiKey: cliOpts.apiKey ?? process.env.XFYUN_API_KEY ?? '',
@@ -121,8 +122,8 @@ export function loadConfig(cliOpts: CliOptions): ResolvedConfig {
     verbose: cliOpts.verbose ?? process.env.VERBOSE === 'true',
     // monitor: CLI --no-monitor(false) 优先，其次环境变量 MONITOR=false/0 禁用，默认 true
     monitor: cliOpts.monitor ?? !['false', '0'].includes((process.env.MONITOR ?? '').toLowerCase()),
-    logDir: resolveLogDir(cliOpts.logDir),
-    statsDir: join(resolveLogDir(cliOpts.logDir), 'stats'),
+    logDir: resolvedLogDir,
+    statsDir: join(resolvedLogDir, 'stats'),
     statsFlushInterval: parseInt(process.env.STATS_FLUSH_INTERVAL_MS || '60000', 10),
     streamReadTimeout: parseInt(process.env.STREAM_READ_TIMEOUT_MS || '60000', 10),
     upstreamFetchTimeout: parseInt(process.env.UPSTREAM_FETCH_TIMEOUT_MS || '300000', 10),
@@ -170,4 +171,27 @@ export async function promptMissingConfig(cfg: ResolvedConfig): Promise<Resolved
     rl.close();
   }
   return cfg;
+}
+
+/**
+ * 重置 config 为默认值，用于测试隔离
+ * 在测试的 beforeEach 中调用，避免测试间互相污染
+ */
+export function resetConfigForTesting(): void {
+  config = {
+    port: 3000,
+    apiKey: '',
+    baseUrl: 'https://maas-coding-api.cn-huabei-1.xf-yun.com/v2',
+    anthropicBaseUrl: 'https://maas-coding-api.cn-huabei-1.xf-yun.com/anthropic',
+    maxRetries: 3,
+    retryDelay: 1000,
+    verbose: false,
+    monitor: true,
+    logDir: './logs',
+    statsDir: './logs/stats',
+    statsFlushInterval: 60_000,
+    streamReadTimeout: 60_000,
+    upstreamFetchTimeout: 300_000,
+    configFile: undefined,
+  };
 }

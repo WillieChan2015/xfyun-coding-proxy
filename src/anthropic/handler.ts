@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { config, DEFAULT_MODEL } from '../config';
-import { upstreamRequest, cleanXfyunFieldsObj, summarizeRequestDiagnostics } from '../upstream';
+import { upstreamRequest, cleanXfyunFieldsObj, summarizeRequestDiagnostics, handleUpstreamResult } from '../upstream';
 import { formatAnthropicError } from '../errors';
 import { extractUpstreamHeaders } from '../util';
 import { ANTHROPIC_SSE_EVENTS } from './types';
@@ -163,60 +163,16 @@ export async function handleAnthropicMessages(
 
   // Handle result based on errorType
   // upstreamRequest 已延迟 writeHead，错误分支可直接用 reply.status().send()
-  if (result.errorType === 'network') {
-    if (reply.raw.headersSent) {
-      reply.raw.write(formatStreamErrorEvent(`upstream request failed: ${result.error}`));
-      reply.raw.end();
-    } else {
-      reply.status(502).send(formatAnthropicError('api_error', `upstream request failed: ${result.error}`));
-    }
-    return;
-  }
-
-  if (result.errorType === 'upstream') {
-    if (reply.raw.headersSent) {
-      reply.raw.write(formatStreamErrorEvent(`upstream returned ${result.status}`));
-      reply.raw.end();
-    } else {
+  handleUpstreamResult(result, isStream, reply, {
+    formatStreamErrorEvent,
+    formatNetworkErrorReply: (errMsg) => formatAnthropicError('api_error', `upstream request failed: ${errMsg}`),
+    formatUpstreamErrorReply: (status, errorBody) => {
       // 上游返回非 2xx，errorBody 可能是讯飞格式而非 Anthropic 格式，
       // 统一包装为 Anthropic 错误格式
-      const parsed = safeParseAnthropicError(result.errorBody ?? '', result.status);
-      reply.status(parsed.status).send(parsed.body);
-    }
-    return;
-  }
-
-  if (result.errorType === 'empty_body') {
-    const status = result.status === 502 ? 500 : result.status;
-    if (reply.raw.headersSent) {
-      reply.raw.write(formatStreamErrorEvent(`upstream returned ${result.status} with empty body`));
-      reply.raw.end();
-    } else {
-      reply.status(status).send(formatAnthropicError('api_error', `upstream returned ${result.status} with empty body`));
-    }
-    return;
-  }
-
-  if (result.errorType === 'no_stream_body') {
-    if (reply.raw.headersSent) {
-      reply.raw.write(formatStreamErrorEvent(`upstream returned ${result.status} with no stream body`));
-      reply.raw.end();
-    } else {
-      reply.status(result.status).send(formatAnthropicError('api_error', `upstream returned ${result.status} with no stream body`));
-    }
-    return;
-  }
-
-  // Stream errors are already handled by rawReply.write in upstreamRequest
-  if (result.errorType === 'stream_error') {
-    return;
-  }
-
-  // Stream success — already handled by rawReply in upstreamRequest
-  if (isStream && result.success) {
-    return;
-  }
-
-  // Non-stream success
-  reply.status(result.status).send(result.responseBody);
+      const parsed = safeParseAnthropicError(errorBody ?? '', status);
+      return parsed.body;
+    },
+    formatEmptyBodyErrorReply: (status) => formatAnthropicError('api_error', `upstream returned ${status} with empty body`),
+    formatNoStreamBodyErrorReply: (status) => formatAnthropicError('api_error', `upstream returned ${status} with no stream body`),
+  });
 }

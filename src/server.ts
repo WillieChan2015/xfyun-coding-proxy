@@ -6,7 +6,7 @@ import { handleProxy, handleGetProxy } from './proxy';
 import { handleOllamaChat, handleOllamaGenerate } from './ollama/handler';
 import { handleAnthropicMessages } from './anthropic/handler';
 import { estimateInputTokens } from './util';
-import { printSessionSummary, initDailyStats, saveDailyStats, saveDailyStatsAsync, rolloverDailyStats, dailyStats, recordRequestComplete, requestFinished, getRequestLog, statsEmitter, sessionStats, getActiveRequests, getStreamingRequests, getLatencyStats, resetDailyStats, setRolloverFn, setSaveFn } from './stats';
+import { printSessionSummary, initDailyStats, saveDailyStats, saveDailyStatsAsync, rolloverDailyStats, dailyStats, recordRequestComplete, requestFinished, getRequestLog, statsEmitter, sessionStats, getActiveRequests, getStreamingRequests, getLatencyStats, resetDailyStats, setRolloverFn, setSaveFn, isDailyStatsDirty, setDailyStatsDirty } from './stats';
 import { checkForUpdate } from './update-check';
 import { getPackageVersion, getPackageName } from './cli';
 
@@ -72,13 +72,13 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
   // 注入日期翻转回调，使 recordRequestComplete 在跨天完成时能自动触发 rollover
   setRolloverFn(() => rolloverDailyStats(cfg.logDir));
   // 注入保存回调，使 resetDailyStats 在重置前能先持久化当前数据
-  setSaveFn((stats) => saveDailyStats(cfg.logDir, stats));
+  setSaveFn((stats) => saveDailyStats(cfg.logDir, stats, dailyStats, isDailyStatsDirty, setDailyStatsDirty));
 
   // 启动定时刷盘（异步版本，避免阻塞事件循环）
   if (cfg.statsFlushInterval > 0) {
     flushTimer = setInterval(() => {
       rolloverDailyStats(cfg.logDir);
-      saveDailyStatsAsync(cfg.logDir, dailyStats).catch((err) => {
+      saveDailyStatsAsync(cfg.logDir, dailyStats, dailyStats, isDailyStatsDirty).catch((err) => {
         console.warn('Periodic stats flush failed:', err);
       });
     }, cfg.statsFlushInterval);
@@ -334,7 +334,7 @@ export async function startServer(server: FastifyInstance, cfg: ResolvedConfig):
     // rolloverDailyStats 跨天时会将 dailyStatsDirty 重置为 false，
     // 此时 saveDailyStats 因 !dirty 跳过保存是正确的——新一天尚无请求数据无需持久化。
     // 若在 rollover 和 save 之间新增修改 dailyStats 的逻辑，需同步置 dirty = true。
-    saveDailyStats(cfg.logDir, dailyStats);
+    saveDailyStats(cfg.logDir, dailyStats, dailyStats, isDailyStatsDirty, setDailyStatsDirty);
     if (monitorHandle) {
       monitorHandle.unmount();
     }

@@ -5,6 +5,7 @@ import {
   extractStreamUsage,
   buildUpstreamUrl,
   cleanXfyunFieldsObj,
+  handleUpstreamResult,
 } from '../upstream';
 import type { UpstreamResult } from '../upstream';
 import { recordRequestComplete, requestStarted, requestFinished } from '../stats';
@@ -216,75 +217,28 @@ async function handleOllamaProxy(
 
   // ---- 步骤 4：处理结果 ----
 
-  // 网络错误
-  if (result.errorType === 'network') {
-    if (reply.raw.headersSent) {
-      reply.raw.write(formatOllamaStreamErrorEvent(`upstream request failed: ${result.error}`));
-      reply.raw.end();
-    } else {
-      reply.status(502).send({ error: `upstream request failed: ${result.error}` });
-    }
-    return;
-  }
-
-  // 上游返回非 2xx 错误
-  if (result.errorType === 'upstream') {
-    if (reply.raw.headersSent) {
-      reply.raw.write(formatOllamaStreamErrorEvent(`upstream returned ${result.status}`));
-      reply.raw.end();
-    } else {
+  // 使用通用结果处理函数
+  handleUpstreamResult(result, isStream, reply, {
+    formatStreamErrorEvent: formatOllamaStreamErrorEvent,
+    formatNetworkErrorReply: (errMsg) => ({ error: `upstream request failed: ${errMsg}` }),
+    formatUpstreamErrorReply: (_status, errorBody) => {
       try {
-        const errJson = JSON.parse(result.errorBody ?? '') as Record<string, unknown>;
-        reply.status(result.status).send(convertErrorToOllama(errJson));
+        const errJson = JSON.parse(errorBody ?? '') as Record<string, unknown>;
+        return convertErrorToOllama(errJson);
       } catch {
-        reply.status(result.status).send({ error: (result.errorBody ?? '').slice(0, 200) });
+        return { error: (errorBody ?? '').slice(0, 200) };
       }
-    }
-    return;
-  }
+    },
+    formatEmptyBodyErrorReply: (status) => ({ error: `upstream returned ${status} with empty body` }),
+    formatNoStreamBodyErrorReply: (status) => ({ error: `upstream returned ${status} with no stream body` }),
+  });
 
-  // 空响应体
-  if (result.errorType === 'empty_body') {
-    if (reply.raw.headersSent) {
-      reply.raw.write(formatOllamaStreamErrorEvent(`upstream returned ${result.status} with empty body`));
-      reply.raw.end();
-    } else {
-      reply.status(result.status).send({ error: `upstream returned ${result.status} with empty body` });
-    }
-    return;
-  }
-
-  // 流式请求上游无 body
-  if (result.errorType === 'no_stream_body') {
-    if (reply.raw.headersSent) {
-      reply.raw.write(formatOllamaStreamErrorEvent(`upstream returned ${result.status} with no stream body`));
-      reply.raw.end();
-    } else {
-      reply.status(result.status).send({ error: `upstream returned ${result.status} with no stream body` });
-    }
-    return;
-  }
-
-  // 流式错误已在 upstreamRequest 内通过 rawReply.write 写入
-  if (result.errorType === 'stream_error') {
-    return;
-  }
-
-  // 流式成功 — 已由 upstreamRequest + streamTransform 处理
-  if (isStream && result.success) {
-    return;
-  }
-
-  // 非流式成功：将 OpenAI 响应转换为 Ollama 格式
-  if (result.responseBody) {
+  // 非流式成功：将 OpenAI 响应转换为 Ollama 格式（handleUpstreamResult 已处理其他情况）
+  if (!isStream && result.success && result.responseBody) {
     const ollamaResponse =
       endpoint === 'chat'
         ? convertChatResponse(result.responseBody)
         : convertGenerateResponse(result.responseBody);
     reply.status(result.status).send(ollamaResponse);
-    return;
   }
-
-  // 兜底：不应到达此处
-  reply.status(500).send({ error: 'unexpected response state' });
 }
