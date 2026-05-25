@@ -77,4 +77,96 @@ describe('RingBuffer', () => {
     buf.push({ id: 3 });
     expect(buf.toArray()).toEqual([{ id: 2 }, { id: 3 }]);
   });
+
+  describe('updateFirst', () => {
+    it('updates matching entry when buffer is not full', () => {
+      const buf = new RingBuffer<{ id: number; val: string }>(3);
+      buf.push({ id: 1, val: 'a' });
+      buf.push({ id: 2, val: 'b' });
+      const found = buf.updateFirst(
+        (e) => e.id === 2,
+        (e) => ({ ...e, val: 'updated' }),
+      );
+      expect(found).toBe(true);
+      expect(buf.toArray()).toEqual([
+        { id: 1, val: 'a' },
+        { id: 2, val: 'updated' },
+      ]);
+    });
+
+    it('updates matching entry when buffer is full (wrapped)', () => {
+      const buf = new RingBuffer<{ id: number; val: string }>(3);
+      buf.push({ id: 1, val: 'a' });
+      buf.push({ id: 2, val: 'b' });
+      buf.push({ id: 3, val: 'c' });
+      buf.push({ id: 4, val: 'd' });
+      const found = buf.updateFirst(
+        (e) => e.id === 3,
+        (e) => ({ ...e, val: 'updated' }),
+      );
+      expect(found).toBe(true);
+      expect(buf.toArray()).toEqual([
+        { id: 2, val: 'b' },
+        { id: 3, val: 'updated' },
+        { id: 4, val: 'd' },
+      ]);
+    });
+
+    it('returns false when no entry matches', () => {
+      const buf = new RingBuffer<{ id: number }>(3);
+      buf.push({ id: 1 });
+      buf.push({ id: 2 });
+      const found = buf.updateFirst(
+        (e) => e.id === 99,
+        (e) => ({ ...e, id: 0 }),
+      );
+      expect(found).toBe(false);
+      expect(buf.toArray()).toEqual([{ id: 1 }, { id: 2 }]);
+    });
+
+    it('increments version on successful update', () => {
+      const buf = new RingBuffer<{ id: number }>(3);
+      buf.push({ id: 1 });
+      const vBefore = buf.version;
+      buf.updateFirst(
+        (e) => e.id === 1,
+        (e) => ({ ...e, id: 10 }),
+      );
+      expect(buf.version).toBe(vBefore + 1);
+    });
+
+    it('does not increment version when no match', () => {
+      const buf = new RingBuffer<{ id: number }>(3);
+      buf.push({ id: 1 });
+      const vBefore = buf.version;
+      buf.updateFirst(
+        (e) => e.id === 99,
+        (e) => e,
+      );
+      expect(buf.version).toBe(vBefore);
+    });
+
+    it('returns false on empty buffer', () => {
+      const buf = new RingBuffer<{ id: number }>(3);
+      const found = buf.updateFirst(
+        (e) => e.id === 1,
+        (e) => e,
+      );
+      expect(found).toBe(false);
+    });
+
+    it('updates only the first match', () => {
+      const buf = new RingBuffer<{ id: number; val: string }>(4);
+      buf.push({ id: 1, val: 'a' });
+      buf.push({ id: 1, val: 'b' });
+      buf.push({ id: 1, val: 'c' });
+      const found = buf.updateFirst(
+        (e) => e.id === 1,
+        (e) => ({ ...e, val: 'updated' }),
+      );
+      expect(found).toBe(true);
+      const arr = buf.toArray();
+      expect(arr.filter((e) => e.val === 'updated').length).toBe(1);
+    });
+  });
 });

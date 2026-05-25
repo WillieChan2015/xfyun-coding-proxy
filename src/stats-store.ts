@@ -189,6 +189,22 @@ export class RingBuffer<T> {
     return [...this.buffer.slice(this.head), ...this.buffer.slice(0, this.head)];
   }
 
+  /** 原地查找并更新第一个满足谓词的条目，返回是否找到 */
+  updateFirst(predicate: (item: T) => boolean, updater: (item: T) => T): boolean {
+    const len = this._size;
+    for (let i = 0; i < len; i++) {
+      const idx = this._size < this.capacity
+        ? i
+        : (this.head + i) % this.capacity;
+      if (predicate(this.buffer[idx])) {
+        this.buffer[idx] = updater(this.buffer[idx]);
+        this._version++;
+        return true;
+      }
+    }
+    return false;
+  }
+
   get length(): number { return this._size; }
   get version(): number { return this._version; }
 }
@@ -291,29 +307,48 @@ export function recordRequestComplete(event: RequestCompleteEvent): void {
   // 延迟窗口：推入延迟值，RingBuffer 会自动处理溢出
   latencyWindow.push(event.latencyMs);
 
-  // 请求日志缓冲区：查找并更新 pending 条目，或新增
-  const logEntry: RequestLogEntry = {
-    timestamp: Date.now(),
-    method: 'POST',
-    path: event.path ?? `/${event.protocol}`,
-    protocol: event.protocol,
-    model: event.model,
-    latencyMs: event.latencyMs,
-    inputTokens: event.inputTokens,
-    outputTokens: event.outputTokens,
-    success: event.success,
-    ...(event.stream !== undefined ? { stream: event.stream } : {}),
-    ...(event.requestId ? { requestId: event.requestId } : {}),
-    ...(event.ua ? { ua: event.ua } : {}),
-    ...(event.error ? { error: event.error } : {}),
-  };
-
-  if (event.requestId && pendingTimestamps.has(event.requestId)) {
-    logEntry.timestamp = pendingTimestamps.get(event.requestId)!;
+  // 请求日志缓冲区：查找并原地更新 pending 条目，或新增
+  const pendingTs = event.requestId ? pendingTimestamps.get(event.requestId) : undefined;
+  if (event.requestId && pendingTs !== undefined) {
     pendingTimestamps.delete(event.requestId);
   }
 
-  requestLog.push(logEntry);
+  const updated = event.requestId
+    ? requestLog.updateFirst(
+        (e) => e.pending === true && e.requestId === event.requestId,
+        (e) => ({
+          ...e,
+          timestamp: pendingTs ?? e.timestamp,
+          latencyMs: event.latencyMs,
+          inputTokens: event.inputTokens,
+          outputTokens: event.outputTokens,
+          success: event.success,
+          pending: false,
+          ...(event.stream !== undefined ? { stream: event.stream } : {}),
+          ...(event.ua ? { ua: event.ua } : {}),
+          ...(event.error ? { error: event.error } : {}),
+        }),
+      )
+    : false;
+
+  if (!updated) {
+    const logEntry: RequestLogEntry = {
+      timestamp: pendingTs ?? Date.now(),
+      method: 'POST',
+      path: event.path ?? `/${event.protocol}`,
+      protocol: event.protocol,
+      model: event.model,
+      latencyMs: event.latencyMs,
+      inputTokens: event.inputTokens,
+      outputTokens: event.outputTokens,
+      success: event.success,
+      ...(event.stream !== undefined ? { stream: event.stream } : {}),
+      ...(event.requestId ? { requestId: event.requestId } : {}),
+      ...(event.ua ? { ua: event.ua } : {}),
+      ...(event.error ? { error: event.error } : {}),
+    };
+    requestLog.push(logEntry);
+  }
 }
 
 /**
