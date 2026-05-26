@@ -16,6 +16,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed / 修复
 
+## [0.0.7-beta.4] - 2026-05-26
+
+### Added / 新增
+
+- 新增终端标题支持，启动时显示服务名和端口，退出时自动恢复。
+- Added terminal title support, displaying service name and port on startup, automatically restoring on exit.
+- 新增 `RingBuffer.updateFirst` 方法，用于原地更新首个匹配条目，优化请求日志更新逻辑。
+- Added `RingBuffer.updateFirst` method for in-place updating the first matching entry, optimizing request log update logic.
+- 新增 `safeSend` 函数，修复 HTTP 头已发送时的竞态错误（`ERR_HTTP_HEADERS_SENT`）。
+- Added `safeSend` function to fix race condition errors when HTTP headers are already sent (`ERR_HTTP_HEADERS_SENT`).
+- 新增 `handleUpstreamResult` 通用结果处理函数，提取各协议 handler 的错误处理逻辑。
+- Added `handleUpstreamResult` generic result handler function, extracting error handling logic from protocol handlers.
+- 新增 `stats-types.ts` 模块，统一管理所有统计相关类型定义。
+- Added `stats-types.ts` module to centralize all statistics-related type definitions.
+- 新增集成测试用例，验证端到端请求处理流程。
+- Added integration test cases to verify end-to-end request processing flow.
+
+### Changed / 变更
+
+- 调整流式请求计数时机，从 SSE 数据传输阶段提前到请求开始时。
+- Adjusted streaming request counting timing, moving from SSE data transmission phase to request start.
+- 所有错误日志和完成日志新增 `ua` 字段，便于排查客户端来源。
+- Added `ua` field to all error and completion logs for easier client source identification.
+- 将 `stats.ts` 拆分为 `stats-store`、`stats-persistence`、`stats-display` 三个独立模块，优化代码结构。
+- Split `stats.ts` into three independent modules: `stats-store`, `stats-persistence`, `stats-display` for better code organization.
+- 优化 `isRetryableXfyunError` 函数，优先使用 JSON parse 确保准确性，失败时 fallback 到字符串匹配。
+- Optimized `isRetryableXfyunError` function to prioritize JSON parse for accuracy, falling back to string matching on failure.
+- 将 ink 相关依赖移至 `optionalDependencies`，减少必装依赖体积。
+- Moved ink-related dependencies to `optionalDependencies` to reduce required dependency size.
+- 升级 ESLint 规则，将 `no-explicit-any` 设为 error 级别。
+- Upgraded ESLint rule, setting `no-explicit-any` to error level.
+- 简化 fetch 请求的超时处理逻辑。
+- Simplified fetch request timeout handling logic.
+
+### Fixed / 修复
+
+- 修复 HTTP 头已发送时的竞态错误，使用 `safeSend` 函数确保客户端始终收到错误信息。
+- Fixed race condition error when HTTP headers are already sent, using `safeSend` function to ensure clients always receive error information.
+- 修复请求日志更新逻辑，使用 `updateFirst` 原地更新 pending 请求而非重复 push。
+- Fixed request log update logic, using `updateFirst` to in-place update pending requests instead of duplicate pushing.
+
 ## [0.0.7-beta.3] - 2026-05-22
 
 ### Added / 新增
