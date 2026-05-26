@@ -634,6 +634,8 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
   // 出口 rollover（recordRequestComplete 内）处理跨天完成的边界情况，两者互补
   rolloverDailyStats(config.logDir);
   requestStarted();
+  // 流式请求从开始就计入 streaming 计数，而非等到 SSE 数据传输阶段
+  if (isStream) streamingStarted();
 
   const startTime = Date.now();
   const model = DEFAULT_MODEL;
@@ -670,7 +672,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
     // fetchWithRetry 网络异常（超时、DNS 失败等）
     const errMsg = err instanceof Error ? err.message : String(err);
     const diagStr = diagnostics ? ` | diag=${JSON.stringify(diagnostics)}` : '';
-    reqInfo.log.error(`upstream fetch error | ${Date.now() - startTime}ms | ${errMsg}${diagStr}`);
+    reqInfo.log.error(`upstream fetch error | ${Date.now() - startTime}ms | ${errMsg}${diagStr} | ua=${ua}`);
 
     const durationMs = Date.now() - startTime;
     recordRequestComplete({
@@ -687,6 +689,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       retries: 0,
       error: errMsg,
     });
+    if (isStream) streamingFinished();
     requestFinished();
 
     return {
@@ -715,7 +718,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
     const errDetail = xfyunErr ? ` | xfyun_code=${xfyunErr.code} msg=${xfyunErr.msg} sid=${xfyunErr.sid ?? 'n/a'}` : '';
     const diagStr = diagnostics ? ` | diag=${JSON.stringify(diagnostics)}` : '';
     reqInfo.log.error(
-      `upstream error | ${response.status} | ${durationMs}ms | retries=${retries}${errDetail}${diagStr} | body=${responseBodyText.slice(0, 300)}`,
+      `upstream error | ${response.status} | ${durationMs}ms | retries=${retries}${errDetail}${diagStr} | ua=${ua} | body=${responseBodyText.slice(0, 300)}`,
     );
 
     recordRequestComplete({
@@ -730,7 +733,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       path: reqPath,
       ua,
       retries,
-      error: `HTTP ${response.status}`,
+      error: `HTTP ${response.status}${xfyunErr ? ` xfyun_code=${xfyunErr.code} msg=${xfyunErr.msg}` : ''}`,
     });
     requestFinished();
 
@@ -752,7 +755,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
   if (!response.ok && !isStream && !responseBodyText) {
     const diagStr = diagnostics ? ` | diag=${JSON.stringify(diagnostics)}` : '';
     reqInfo.log.error(
-      `upstream error with empty body | ${response.status} | ${durationMs}ms | retries=${retries}${diagStr}`,
+      `upstream error with empty body | ${response.status} | ${durationMs}ms | retries=${retries}${diagStr} | ua=${ua}`,
     );
 
     recordRequestComplete({
@@ -789,7 +792,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
   if (isStream && !response.ok && !response.body) {
     const diagStr = diagnostics ? ` | diag=${JSON.stringify(diagnostics)}` : '';
     reqInfo.log.error(
-      `stream upstream error with no body | ${response.status} | ${durationMs}ms | retries=${retries}${diagStr}`,
+      `stream upstream error with no body | ${response.status} | ${durationMs}ms | retries=${retries}${diagStr} | ua=${ua}`,
     );
 
     recordRequestComplete({
@@ -806,6 +809,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       retries,
       error: `HTTP ${response.status} no stream body`,
     });
+    streamingFinished();
     requestFinished();
 
     return {
@@ -834,7 +838,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
     const errDetail = xfyunErr ? ` | xfyun_code=${xfyunErr.code} msg=${xfyunErr.msg} sid=${xfyunErr.sid ?? 'n/a'}` : '';
     const diagStr = diagnostics ? ` | diag=${JSON.stringify(diagnostics)}` : '';
     reqInfo.log.error(
-      `stream upstream error | ${response.status} | ${durationMs}ms | retries=${retries}${errDetail}${diagStr} | body=${(errorBodyText ?? '').slice(0, 300)}`,
+      `stream upstream error | ${response.status} | ${durationMs}ms | retries=${retries}${errDetail}${diagStr} | ua=${ua} | body=${(errorBodyText ?? '').slice(0, 300)}`,
     );
 
     recordRequestComplete({
@@ -851,6 +855,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       retries,
       error: `HTTP ${response.status}`,
     });
+    streamingFinished();
     requestFinished();
 
     return {
@@ -878,7 +883,6 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       'X-Accel-Buffering': 'no',
     };
     rawReply.writeHeader(200, hdrs);
-    streamingStarted();
 
     const reader = response.body!.getReader() as ReadableStreamDefaultReader<Uint8Array>;
     const sseFilter = new SSEFilter(allowedSSEEvents);
@@ -940,19 +944,19 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       const errMsg = err instanceof Error ? err.message : String(err);
       streamError = errMsg;
       const diagStr = diagnostics ? ` | diag=${JSON.stringify(diagnostics)}` : '';
-      reqInfo.log.error(`stream error | ${durationMs}ms | ${errMsg}${diagStr}`);
+      reqInfo.log.error(`stream error | ${durationMs}ms | ${errMsg}${diagStr} | ua=${ua}`);
 
       // 向 SSE 流发送错误事件，让客户端知道流异常终止
       rawReply.write(formatStreamErrorEvent(errMsg));
     } finally {
       try { reader.releaseLock(); } catch { /* already released */ }
       try { rawReply.end(); } catch { /* client already closed */ }
-      streamingFinished();
     }
 
     // 流式 SSE 循环已结束，重新计算完整耗时（含所有 chunk 的读取和透传）
     durationMs = Date.now() - startTime;
 
+    streamingFinished();
     requestFinished();
 
     if (streamError) {
@@ -992,7 +996,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
         ? `in=${fmtTokens(inputTokens)} out=${fmtTokens(outputTokens ?? 0)} total=${fmtTokens(inputTokens + (outputTokens ?? 0))}`
         : '';
     reqInfo.log.info(
-      `stream completed | ${durationMs}ms | ${tokenInfo}`.replace(/ \| $/, ''),
+      `stream completed | ${durationMs}ms | ${tokenInfo} | ua=${ua}`.replace(/ \| $/, ''),
     );
     recordRequestComplete({
       protocol,
@@ -1024,7 +1028,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
   if (!responseBodyText) {
     const diagStr = diagnostics ? ` | diag=${JSON.stringify(diagnostics)}` : '';
     reqInfo.log.error(
-      `non-stream response with null body | ${response.status} | ${durationMs}ms | retries=${retries}${diagStr}`,
+      `non-stream response with null body | ${response.status} | ${durationMs}ms | retries=${retries}${diagStr} | ua=${ua}`,
     );
 
     recordRequestComplete({
@@ -1063,7 +1067,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
   } catch {
     // 上游返回 HTTP 200 但响应体不是合法 JSON（如讯飞返回 {"code":10012,...} 非 OpenAI 格式）
     reqInfo.log.error(
-      `non-stream response JSON parse failed | ${response.status} | ${durationMs}ms | retries=${retries} | body=${responseBodyText.slice(0, 300)}`,
+      `non-stream response JSON parse failed | ${response.status} | ${durationMs}ms | retries=${retries} | ua=${ua} | body=${responseBodyText.slice(0, 300)}`,
     );
 
     recordRequestComplete({
@@ -1116,7 +1120,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       ? `in=${fmtTokens(usageInfo.promptTokens!)} out=${fmtTokens(usageInfo.completionTokens!)} total=${fmtTokens((usageInfo.promptTokens ?? 0) + (usageInfo.completionTokens ?? 0))}`
       : '';
   reqInfo.log.info(
-    `request completed | ${durationMs}ms | ${tokenInfo}`.replace(/ \| $/, ''),
+    `request completed | ${durationMs}ms | ${tokenInfo} | ua=${ua}`.replace(/ \| $/, ''),
   );
 
   recordRequestComplete({
@@ -1150,6 +1154,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
 
 export interface ReplyLike {
   raw: { headersSent: boolean; write: (data: string) => void; end: () => void };
+  sent: boolean;
   status: (code: number) => { send: (body: unknown) => void };
 }
 
@@ -1162,6 +1167,55 @@ export interface ErrorFormatters {
   formatNonStreamSuccess?: (result: UpstreamResult) => unknown;
 }
 
+/**
+ * 安全发送 HTTP 响应：防止 ERR_HTTP_HEADERS_SENT 竞态
+ *
+ * 场景：upstreamRequest 返回错误结果时，handler 调用 reply.status().send()，
+ * 但 Fastify 内部可能已经发送了 headers（如并发请求中 writeHeader 被调用、
+ * 或 Fastify 的 requestTimeout 自动发送了响应），
+ * 导致 reply.status().send() 触发 ERR_HTTP_HEADERS_SENT。
+ *
+ * 修复：reply.status().send() 失败时，fallback 到 raw.write + raw.end 写入 SSE 错误事件，
+ * 确保客户端始终收到错误信息而非空 body。
+ */
+function safeSend(
+  reply: ReplyLike,
+  status: number,
+  body: unknown,
+  formatters: ErrorFormatters,
+  errorMsg: string,
+): void {
+  if (reply.raw.headersSent) {
+    // headers 已发送，只能通过 raw.write 写入 SSE 错误事件
+    try {
+      reply.raw.write(formatters.formatStreamErrorEvent(errorMsg));
+    } catch { /* client already closed */ }
+    try {
+      reply.raw.end();
+    } catch { /* client already closed */ }
+    reply.sent = true;
+    return;
+  }
+  try {
+    reply.status(status).send(body);
+  } catch (err) {
+    // reply.status().send() 触发 ERR_HTTP_HEADERS_SENT：Fastify 内部状态异常
+    // fallback 到 raw.write 写入 SSE 错误事件，确保客户端收到错误信息
+    if (err instanceof Error && err.name === 'ERR_HTTP_HEADERS_SENT') {
+      try {
+        reply.raw.write(formatters.formatStreamErrorEvent(errorMsg));
+      } catch { /* client already closed */ }
+      try {
+        reply.raw.end();
+      } catch { /* client already closed */ }
+      reply.sent = true;
+      return;
+    }
+    // 其他异常直接抛出，由 Fastify 的 error handler 处理
+    throw err;
+  }
+}
+
 export function handleUpstreamResult(
   result: UpstreamResult,
   isStream: boolean,
@@ -1169,42 +1223,34 @@ export function handleUpstreamResult(
   formatters: ErrorFormatters,
 ): void {
   if (result.errorType === 'network') {
-    if (reply.raw.headersSent) {
-      reply.raw.write(formatters.formatStreamErrorEvent(`upstream request failed: ${result.error}`));
-      reply.raw.end();
-    } else {
-      reply.status(502).send(formatters.formatNetworkErrorReply(result.error ?? 'unknown'));
-    }
+    safeSend(
+      reply, 502, formatters.formatNetworkErrorReply(result.error ?? 'unknown'),
+      formatters, `upstream request failed: ${result.error ?? 'unknown'}`,
+    );
     return;
   }
 
   if (result.errorType === 'upstream') {
-    if (reply.raw.headersSent) {
-      reply.raw.write(formatters.formatStreamErrorEvent(`upstream returned ${result.status}`));
-      reply.raw.end();
-    } else {
-      reply.status(result.status).send(formatters.formatUpstreamErrorReply(result.status, result.errorBody));
-    }
+    safeSend(
+      reply, result.status, formatters.formatUpstreamErrorReply(result.status, result.errorBody),
+      formatters, `upstream returned ${result.status}`,
+    );
     return;
   }
 
   if (result.errorType === 'empty_body') {
-    if (reply.raw.headersSent) {
-      reply.raw.write(formatters.formatStreamErrorEvent(`upstream returned ${result.status} with empty body`));
-      reply.raw.end();
-    } else {
-      reply.status(result.status).send(formatters.formatEmptyBodyErrorReply(result.status));
-    }
+    safeSend(
+      reply, result.status, formatters.formatEmptyBodyErrorReply(result.status),
+      formatters, `upstream returned ${result.status} with empty body`,
+    );
     return;
   }
 
   if (result.errorType === 'no_stream_body') {
-    if (reply.raw.headersSent) {
-      reply.raw.write(formatters.formatStreamErrorEvent(`upstream returned ${result.status} with no stream body`));
-      reply.raw.end();
-    } else {
-      reply.status(result.status).send(formatters.formatNoStreamBodyErrorReply(result.status));
-    }
+    safeSend(
+      reply, result.status, formatters.formatNoStreamBodyErrorReply(result.status),
+      formatters, `upstream returned ${result.status} with no stream body`,
+    );
     return;
   }
 

@@ -14,6 +14,13 @@ const name = getPackageName();
 const version = getPackageVersion();
 let flushTimer: ReturnType<typeof setInterval> | null = null;
 
+// 设置/恢复终端标题：OSC 转义序列，仅对真实 TTY 有效
+function setTerminalTitle(title: string): void {
+  if (process.stdout.isTTY) {
+    process.stdout.write(`\x1b]0;${title}\x07`);
+  }
+}
+
 /**
  * 注册 Ollama 静态路由（/api/tags、/api/version、/api/show）
  * prefix 为 '/ollama' 或 ''，避免重复定义相同的 handler
@@ -317,6 +324,7 @@ export async function startServer(server: FastifyInstance, cfg: ResolvedConfig):
   logStartup(`Config file: ${cfg.configFile ?? '(none)'}`);
   logStartup(`Log dir: ${cfg.logDir}`);
   logStartup(`Listening on http://127.0.0.1:${cfg.port}`);
+  setTerminalTitle(`${name} :${cfg.port}`);
   // 异步检查 npm registry 是否有新版本，不阻塞启动
   checkForUpdate(cfg.logDir, version).catch(() => {});
 
@@ -340,6 +348,7 @@ export async function startServer(server: FastifyInstance, cfg: ResolvedConfig):
     }
     await server.close();
     server.log.info('Server closed');
+    setTerminalTitle('');
     printSessionSummary();
     process.exit(0);
   };
