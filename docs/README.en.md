@@ -55,13 +55,14 @@ Claude Code / Cursor (Anthropic mode)
 - **GET & POST Proxy** — Forwards both `POST /v1/*` (chat completions) and `GET /v1/*` (models listing)
 - **SSE Stream Passthrough** — Real-time streaming with non-standard iFlytek events filtered out (`progress_notice`, `context_usage`)
 - **Field Cleanup** — Automatically removes iFlytek-specific fields like `reasoning_content`, `plugins_content`
-- **Auto Retry** — Exponential backoff on HTTP 429/503 and iFlytek business error codes 10012, 10010, 10006
+- **Auto Retry** — Exponential backoff on HTTP 429/503 and iFlytek business error codes 10012, 10010, 11210
 - **Logging** — Console (one-line readable) + daily-rotating local files (7-day retention)
 - **Session Summary** — Prints request count, token usage, retries, errors, and uptime on exit
 - **Daily Statistics** — Aggregates usage across sessions per day, persists to local files, and supports CLI history queries
-- **Ollama Protocol Compatibility** — New `/ollama/api/chat`, `/ollama/api/generate`, and `/ollama/api/tags` routes that automatically convert Ollama native protocol requests to OpenAI format for forwarding, and convert responses back to Ollama NDJSON format
-- **Anthropic Protocol Compatibility** — Added `/anthropic/v1/messages` route, passthrough Anthropic Messages API requests to Xfyun Anthropic-compatible endpoint, supporting Claude Code / Cursor (Anthropic mode) and other clients
-- **One-Click Client Setup** — Added `maas-coding-proxy setup` subcommand for interactive configuration of Claude Code and other clients, with automatic installation detection, change preview, backup, and config writing
+- **Ollama Protocol Compatibility** — `/ollama/api/chat`, `/ollama/api/generate`, `/ollama/api/tags`, `/ollama/api/version`, `/ollama/api/show` routes that automatically convert Ollama native protocol requests to OpenAI format for forwarding, and convert responses back to Ollama NDJSON format; also supports `/ollama/v1/chat/completions` and `/ollama/v1/models` for VS Code Continue.dev; unprefixed routes (`/api/chat`, `/api/generate`, etc.) are also supported for clients that set Base URL to `http://localhost:3000`
+- **Anthropic Protocol Compatibility** — `/anthropic/v1/messages` route, passthrough Anthropic Messages API requests to iFlytek Anthropic-compatible endpoint, supporting Claude Code / Cursor (Anthropic mode) and other clients
+- **One-Click Client Setup** — `maas-coding-proxy setup` subcommand for interactive configuration of Claude Code and other clients, with automatic installation detection, change preview, backup, and config writing
+- **Real-Time Monitor Dashboard** — Auto-displayed Ink TUI panel on startup (enabled by default), showing request rate, success rate, token usage, concurrent/streaming request counts, latency stats, and request log stream; keyboard controls: `q` quit, `↑↓` scroll, `←→` page, `e` toggle errors, `r` reset daily stats; disable with `--no-monitor` or `MONITOR=false`
 
 ## Runtime Requirements
 
@@ -170,30 +171,15 @@ pnpm build        # Compile TypeScript to dist/
 
 ## Release Automation
 
-This repository uses a tag-driven GitHub Actions workflow to keep npm publishes and GitHub Releases in sync.
+This repository uses a **tag-driven** GitHub Actions workflow to keep npm publishes and GitHub Releases in sync.
 
 1. Add an `NPM_TOKEN` repository secret in GitHub Actions settings.
-2. Keep the current `## [Unreleased]` notes up to date in `CHANGELOG.md` (or add the target version heading manually if you prefer).
-3. Preview the release with `pnpm release:auto:dry-run <version-or-bump>` (or `pnpm release:dry-run <version-or-bump>` if you only want the changelog preview).
-4. Run `pnpm release:auto <version-or-bump> --yes` to automatically run tests, build, version bump, changelog promotion, local release commit creation, tag creation, and post-prepare verification.
-5. Add `--push --yes` if you also want the script to push the release commit and tag for you.
+2. Keep the `## [Unreleased]` notes up to date in `CHANGELOG.md`.
+3. Run `pnpm release:auto <version-or-bump> --push --yes` to automatically run tests, build, version bump, changelog promotion, commit, tag creation, and push.
 
-After the tag is pushed, GitHub Actions will install dependencies, extract the matching version section from `CHANGELOG.md`, run the package's `prepublishOnly` checks (`pnpm test && pnpm build`), publish to npm, and then create the matching GitHub Release. Tags containing `-` are automatically marked as GitHub prereleases.
+After the tag is pushed, GitHub Actions automatically installs dependencies, extracts the changelog section, runs `prepublishOnly` checks, publishes to npm, and creates the GitHub Release.
 
-The GitHub Release body is sourced from the `CHANGELOG.md` section that matches the pushed tag. `pnpm release:prepare` and `pnpm release:auto` will create that version heading from `## [Unreleased]` when it does not already exist.
-
-For local preparation, the repository provides five helper commands:
-
-- `pnpm release:check` — verifies that `CHANGELOG.md` contains the heading for the current `package.json` version.
-- `pnpm release:auto:dry-run patch` — previews the resolved version, planned checks, changelog migration, release notes source, and blockers without mutating the repository.
-- `pnpm release:auto patch --yes` — runs the local automation workflow end to end: `pnpm test`, `pnpm build`, version bump, changelog preparation, release commit + tag creation, changelog verification, and `git diff --check`.
-- `pnpm release:auto 0.0.2 --push --yes` — does the same local workflow and then runs `git push` plus `git push --tags`.
-- `pnpm release:dry-run 0.0.2` — previews the target version, tag, changelog migration, release notes source, and blockers without mutating the repository.
-- `pnpm release:prepare 0.0.2` — bumps the version, promotes the current `Unreleased` notes into `## [0.0.2] - YYYY-MM-DD` when needed, restores `## [Unreleased]` to the standard `Added / Changed / Fixed` template, validates `CHANGELOG.md`, creates a local `chore: release v0.0.2` commit, and creates the local tag `v0.0.2`.
-
-`pnpm release:prepare` still does not push anything automatically; `pnpm release:auto` only pushes when you opt in with `--push`.
-
-If you want the Release to be created automatically, publish through the tag workflow instead of running a local `npm publish` by itself.
+Preview locally first with `pnpm release:auto:dry-run <version-or-bump>` without mutating the repository. See `CHANGELOG.md` or `pnpm release:auto --help` for details.
 
 ## Configuration
 
@@ -210,6 +196,9 @@ Via `.env` file or environment variables:
 | `XFYUN_LOG_DIR` | XDG state dir | Log output directory |
 | `MAAS_CODING_PROXY_CONFIG` | — | Path to a custom config file |
 | `STATS_FLUSH_INTERVAL_MS` | `60000` | Daily stats flush interval (ms), set to `0` to disable |
+| `STREAM_READ_TIMEOUT_MS` | `60000` | Stream SSE single read timeout (ms), prevents hang when upstream stops sending |
+| `UPSTREAM_FETCH_TIMEOUT_MS` | `300000` | Upstream fetch total timeout (ms), covers connection + full streaming duration |
+| `VERBOSE` | `false` | Enable debug logging (equivalent to `--verbose`) |
 
 ### CLI Options
 
@@ -226,6 +215,7 @@ You can also configure the proxy via CLI flags:
 | `--log-dir <dir>` | Log output directory | XDG state dir |
 | `-c, --config <path>` | Path to config file | auto-detected |
 | `-v, --verbose` | Enable debug logging | `false` |
+| `--no-monitor` | Disable real-time monitor dashboard, use standard logging | enabled by default |
 
 ### Configuration Lookup Order
 
@@ -326,24 +316,14 @@ This proxy also includes Trae-specific compatibility handling:
 The proxy supports the Ollama native protocol. Ollama clients can point their Base URL to the proxy:
 
 - Set Ollama Base URL to `http://localhost:3000/ollama`
-- Supported endpoints: `POST /ollama/api/chat`, `POST /ollama/api/generate`, `GET /ollama/api/tags`
+- Supported endpoints: `POST /ollama/api/chat`, `POST /ollama/api/generate`, `GET /ollama/api/tags`, `GET /ollama/api/version`, `POST /ollama/api/show`, `POST /ollama/v1/chat/completions`, `GET /ollama/v1/models`
+- Also supports unprefixed routes (`/api/chat`, `/api/generate`, etc.) for clients that set Base URL to `http://localhost:3000`
 - Model names are overridden to `astron-code-latest` before forwarding
 - Streaming responses use NDJSON format (`application/x-ndjson`)
 
 Open WebUI: set the Ollama API URL to `http://localhost:3000/ollama`.
 
-Continue.dev example:
-
-```json
-{
-  "models": [{
-    "title": "iFlytek Xingchen (Ollama)",
-    "provider": "ollama",
-    "model": "astron-code-latest",
-    "apiBase": "http://localhost:3000/ollama"
-  }]
-}
-```
+Continue.dev config example see the VS Code section below.
 
 ### Claude Code
 
@@ -393,7 +373,7 @@ models:
 - Incoming model values are overridden to `astron-code-latest` before forwarding upstream.
 - String stream flags such as `"true"` are normalized to boolean `true` for upstream compatibility.
 - Error responses are returned in an OpenAI-style `{ error: { message, type, code } }` structure.
-- Ollama protocol routes use the `/ollama` prefix, supporting `/api/chat`, `/api/generate`, and `/api/tags` endpoints.
+- Ollama protocol routes use the `/ollama` prefix, supporting `/api/chat`, `/api/generate`, `/api/tags`, `/api/version`, `/api/show`, `/v1/chat/completions`, and `/v1/models` endpoints. Unprefixed routes (`/api/chat`, etc.) are also supported for clients that set Base URL directly to `http://localhost:3000`.
 - Ollama-specific local parameters (`keep_alive`, `options.top_k`, `options.num_ctx`, etc.) are silently dropped.
 - Ollama streaming responses use NDJSON format (`application/x-ndjson`), unlike OpenAI's SSE format.
 - Anthropic protocol routes use the `/anthropic` prefix, supporting the `/v1/messages` endpoint.
@@ -406,27 +386,40 @@ models:
 
 ```
 src/
-├── index.ts    # CLI entry point (bin)
-├── server.ts   # Fastify server creation + startup + graceful shutdown
-├── proxy.ts    # Core proxy: forwarding + streaming + retry + SSE filter
-├── cli.ts      # CLI argument parsing (commander subcommands)
-├── config.ts   # Config: CLI args + env vars + config discovery + validation
-├── stats.ts    # Session stats + daily stats persistence + exit summary
-├── stats-cmd.ts # CLI stats subcommand handler
-├── setup-cmd.ts # setup subcommand handler
-├── util.ts     # Token usage extraction + formatting
-└── ollama/
-    ├── types.ts    # Ollama protocol type definitions
-    ├── request.ts  # Ollama → OpenAI request conversion
-    ├── response.ts # OpenAI → Ollama response conversion (incl. SSE→NDJSON)
-    └── handler.ts  # Ollama route handlers
-└── anthropic/
-    ├── types.ts    # Anthropic protocol type definitions
-    └── handler.ts  # Anthropic route handlers
-└── setup/
-    ├── types.ts        # Client type definitions and registry
-    ├── claude-code.ts  # Claude Code configuration logic
-    └── restore-cmd.ts  # setup restore subcommand handler
+├── index.ts        # CLI entry point (bin)
+├── server.ts       # Fastify server creation + startup + graceful shutdown
+├── proxy.ts        # Core proxy: forwarding + streaming + retry + SSE filter
+├── upstream.ts     # Shared upstream layer: fetchWithRetry, SSEFilter, safeSend, handleUpstreamResult
+├── errors.ts       # Error formatting utilities
+├── cli.ts          # CLI argument parsing (commander subcommands)
+├── config.ts       # Config: CLI args + env vars + config discovery + validation
+├── util.ts         # Token usage extraction + formatting
+├── types/
+│   └── openai.ts   # OpenAI protocol type guards
+├── ollama/
+│   ├── types.ts    # Ollama protocol type definitions
+│   ├── request.ts  # Ollama → OpenAI request conversion
+│   ├── response.ts # OpenAI → Ollama response conversion (incl. SSE→NDJSON)
+│   └── handler.ts  # Ollama route handlers
+├── anthropic/
+│   ├── types.ts    # Anthropic protocol type definitions
+│   └── handler.ts  # Anthropic route handlers
+├── setup/
+│   ├── types.ts        # Client type definitions and registry
+│   ├── claude-code.ts  # Claude Code configuration logic
+│   └── restore-cmd.ts  # setup restore subcommand handler
+├── monitor/
+│   ├── entry.ts    # Ink monitor panel entry
+│   ├── index.ts    # Panel components
+│   └── types.d.ts  # Type declarations
+├── stats.ts            # Session stats + exit summary
+├── stats-store.ts      # Stats data store
+├── stats-persistence.ts # Stats persistence (read/write JSON)
+├── stats-display.ts    # Stats formatted output
+├── stats-types.ts      # Stats type definitions
+├── stats-cmd.ts        # CLI stats subcommand handler
+├── setup-cmd.ts        # setup subcommand handler
+└── update-check.ts     # npm version update check
 ```
 
 ## Logging
