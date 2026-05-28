@@ -204,6 +204,7 @@ tag 推送后，GitHub Actions 自动安装依赖、提取 changelog、执行 `p
 | `STREAM_READ_TIMEOUT_MS`   | `60000`                                             | 流式 SSE 单次 read 超时（毫秒），防止上游停止发送时挂起 |
 | `UPSTREAM_FETCH_TIMEOUT_MS` | `300000`                                           | 上游 fetch 总超时（毫秒），包括连接建立 + 流式传输全过程 |
 | `VERBOSE`                  | `false`                                             | 启用调试日志（等同于 `--verbose`）                      |
+| `DEBUG_PROXY`              | —                                                   | 设为 `1` 启用调试日志（等同于 `--debug`）                |
 
 ### CLI 参数
 
@@ -220,6 +221,7 @@ tag 推送后，GitHub Actions 自动安装依赖、提取 changelog、执行 `p
 | `--log-dir <dir>`     | 日志输出目录                 | XDG state 目录                                        |
 | `-c, --config <path>` | 配置文件路径                 | 自动检测                                                |
 | `-v, --verbose`       | 启用调试日志                 | `false`                                             |
+| `--debug`             | 启用请求/响应调试日志，写入 `logs/debug/` 目录（NDJSON 格式） | 否                                             |
 | `--no-monitor`        | 禁用实时监控面板，使用普通日志输出       | 默认启用                                               |
 
 ### 配置查找顺序
@@ -231,6 +233,20 @@ tag 推送后，GitHub Actions 自动安装依赖、提取 changelog、执行 `p
 3. `--config` 或 `$MAAS_CODING_PROXY_CONFIG` 指定的配置文件
 4. `$XDG_CONFIG_HOME/maas-coding-proxy/config.env`（默认 `~/.config/maas-coding-proxy/config.env`，兼容旧目录 `~/.config/xfyun-coding-proxy/config.env`）
 5. 当前工作目录下的 `.env`
+
+## 调试
+
+当遇到请求问题需要排查时，可启用调试日志：
+
+```bash
+maas-coding-proxy start --debug
+# 或
+DEBUG_PROXY=1 maas-coding-proxy start
+```
+
+调试日志以 NDJSON 格式写入 `logs/debug/YYYY-MM-DD.ndjson`，包含完整的客户端请求、上游响应和代理响应数据。
+
+**注意：** 调试日志包含 Authorization header 等敏感信息，仅用于排查问题，生产环境不应开启。
 
 ## 用量统计
 

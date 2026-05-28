@@ -199,6 +199,7 @@ Via `.env` file or environment variables:
 | `STREAM_READ_TIMEOUT_MS` | `60000` | Stream SSE single read timeout (ms), prevents hang when upstream stops sending |
 | `UPSTREAM_FETCH_TIMEOUT_MS` | `300000` | Upstream fetch total timeout (ms), covers connection + full streaming duration |
 | `VERBOSE` | `false` | Enable debug logging (equivalent to `--verbose`) |
+| `DEBUG_PROXY` | — | Set to `1` to enable debug logging (equivalent to `--debug`) |
 
 ### CLI Options
 
@@ -215,6 +216,7 @@ You can also configure the proxy via CLI flags:
 | `--log-dir <dir>` | Log output directory | XDG state dir |
 | `-c, --config <path>` | Path to config file | auto-detected |
 | `-v, --verbose` | Enable debug logging | `false` |
+| `--debug` | Enable request/response debug logging to `logs/debug/` (NDJSON format) | No |
 | `--no-monitor` | Disable real-time monitor dashboard, use standard logging | enabled by default |
 
 ### Configuration Lookup Order
@@ -226,6 +228,20 @@ Configuration values are resolved with the following priority (highest first):
 3. Config file specified by `--config` or `$MAAS_CODING_PROXY_CONFIG`
 4. `$XDG_CONFIG_HOME/maas-coding-proxy/config.env` (default: `~/.config/maas-coding-proxy/config.env`, legacy `~/.config/xfyun-coding-proxy/config.env` is still supported)
 5. `.env` in the current working directory
+
+## Debugging
+
+Enable debug logging when troubleshooting request issues:
+
+```bash
+maas-coding-proxy start --debug
+# or
+DEBUG_PROXY=1 maas-coding-proxy start
+```
+
+Debug logs are written as NDJSON to `logs/debug/YYYY-MM-DD.ndjson` and contain complete client requests, upstream responses, and proxy responses.
+
+**Note:** Debug logs include sensitive information such as Authorization headers. Only use for troubleshooting; do not enable in production.
 
 ## Usage Statistics
 
