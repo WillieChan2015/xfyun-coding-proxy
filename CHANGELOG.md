@@ -16,6 +16,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed / 修复
 
+## [0.0.7-beta.5] - 2026-05-28
+
+### Added / 新增
+
+- 新增 `--debug` CLI 选项和 `DEBUG_PROXY=1` 环境变量，支持将完整的请求/响应数据以 NDJSON 格式写入 `logs/debug/` 目录，用于排查问题。仅用于调试，生产环境不应开启。
+- Added `--debug` CLI flag and `DEBUG_PROXY=1` env var to log complete request/response data to `logs/debug/` as NDJSON files for troubleshooting. Only intended for debugging; should not be enabled in production.
+
+### Changed / 变更
+
+### Fixed / 修复
+
+- 修复流式请求上游返回非 2xx 错误时，错误信息缺少讯飞错误详情（`xfyun_code` 和 `msg`）的问题，现在错误日志包含完整的错误信息便于调试。
+- Fixed missing iFlytek error details (`xfyun_code` and `msg`) in stream upstream error responses when the upstream returns non-2xx status; error logs now include complete error information for easier debugging.
+
 ## [0.0.7-beta.4] - 2026-05-26
 
 ### Added / 新增
