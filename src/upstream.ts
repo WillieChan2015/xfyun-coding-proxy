@@ -860,7 +860,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       path: reqPath,
       ua,
       retries,
-      error: `HTTP ${response.status}`,
+      error: `HTTP ${response.status}${xfyunErr ? ` xfyun_code=${xfyunErr.code} msg=${xfyunErr.msg}` : ''}`,
     });
     streamingFinished();
     requestFinished();
@@ -872,7 +872,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       retries,
       success: false,
       errorType: 'upstream',
-      error: `HTTP ${response.status}`,
+      error: `HTTP ${response.status}${xfyunErr ? ` xfyun_code=${xfyunErr.code} msg=${xfyunErr.msg}` : ''}`,
       inputTokens: 0,
       outputTokens: 0,
       durationMs,
