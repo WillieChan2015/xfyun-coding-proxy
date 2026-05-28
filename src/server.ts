@@ -323,6 +323,7 @@ export async function startServer(server: FastifyInstance, cfg: ResolvedConfig):
   logStartup(`Forwarding /anthropic/* → ${cfg.anthropicBaseUrl} (Anthropic protocol)`);
   logStartup(`Config file: ${cfg.configFile ?? '(none)'}`);
   logStartup(`Log dir: ${cfg.logDir}`);
+  if (cfg.debug) logStartup(`Debug mode: ON (logging request/response data to ${cfg.logDir}/debug/)`);
   logStartup(`Listening on http://127.0.0.1:${cfg.port}`);
   setTerminalTitle(`${name} :${cfg.port}`);
   // 异步检查 npm registry 是否有新版本，不阻塞启动

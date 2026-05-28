@@ -16,6 +16,7 @@ export const configSchema = z.object({
   anthropicBaseUrl: z.string().url('anthropicBaseUrl must be a valid URL'),
   maxRetries: z.number().int().min(0, 'maxRetries must be >= 0').max(10, 'maxRetries must be <= 10'),
   retryDelay: z.number().int().min(100, 'retryDelay must be >= 100').max(60_000, 'retryDelay must be <= 60000'),
+  debug: z.boolean(),
   verbose: z.boolean(),
   monitor: z.boolean(),
   logDir: z.string().min(1, 'logDir is required'),
@@ -35,6 +36,7 @@ const DEFAULT_CONFIG: ResolvedConfig = {
   anthropicBaseUrl: 'https://maas-coding-api.cn-huabei-1.xf-yun.com/anthropic',
   maxRetries: 3,
   retryDelay: 1000,
+  debug: false,
   verbose: false,
   monitor: true,
   logDir: './logs',
@@ -121,6 +123,7 @@ export function loadConfig(cliOpts: CliOptions): ResolvedConfig {
       'https://maas-coding-api.cn-huabei-1.xf-yun.com/anthropic',
     maxRetries: cliOpts.maxRetries ?? parseInt(process.env.MAX_RETRIES || '3', 10),
     retryDelay: cliOpts.retryDelay ?? parseInt(process.env.RETRY_DELAY_MS || '1000', 10),
+    debug: cliOpts.debug ?? process.env.DEBUG_PROXY === '1',
     verbose: cliOpts.verbose ?? process.env.VERBOSE === 'true',
     // monitor: CLI --no-monitor(false) 优先，其次环境变量 MONITOR=false/0 禁用，默认 true
     monitor: cliOpts.monitor ?? !['false', '0'].includes((process.env.MONITOR ?? '').toLowerCase()),

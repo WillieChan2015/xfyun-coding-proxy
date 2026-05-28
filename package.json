@@ -29,6 +29,7 @@
   "author": "Willie",
   "scripts": {
     "start": "bun src/index.ts",
+    "start:debug": "bun src/index.ts --debug",
     "dev": "bun --watch src/index.ts",
     "build": "bun scripts/build.ts",
     "prepack": "chmod +x dist/index.js",

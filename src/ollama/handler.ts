@@ -10,6 +10,7 @@ import {
 import type { UpstreamResult } from '../upstream';
 import { recordRequestComplete, requestStarted, requestFinished } from '../stats';
 import { readBodyWithLimit } from '../util';
+import { isDebugEnabled, debugLogRequest } from '../debug-logger';
 import { convertChatRequest, convertGenerateRequest } from './request';
 import {
   convertChatResponse,
@@ -163,6 +164,15 @@ async function handleOllamaProxy(
   request.log.info(
     `ollama ${endpoint} | stream=${isStream} | model=${rawBody.model ?? 'unknown'} | ua=${ua}`,
   );
+
+  if (isDebugEnabled()) {
+    debugLogRequest(request.id, {
+      method: request.method,
+      url: request.url,
+      headers: request.headers as Record<string, string | undefined>,
+      body: rawBody,
+    });
+  }
 
   // ---- 步骤 2：构建上游请求 ----
   const upstreamUrl = buildUpstreamUrl('/v1/chat/completions');

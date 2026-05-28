@@ -3,6 +3,7 @@ import { config, DEFAULT_MODEL } from '../config';
 import { upstreamRequest, cleanXfyunFieldsObj, summarizeRequestDiagnostics, handleUpstreamResult } from '../upstream';
 import { formatAnthropicError } from '../errors';
 import { extractUpstreamHeaders } from '../util';
+import { isDebugEnabled, debugLogRequest } from '../debug-logger';
 import { ANTHROPIC_SSE_EVENTS } from './types';
 import type { AnthropicUsage } from './types';
 import type { UpstreamResult, RequestDiagnostics } from '../upstream';
@@ -116,6 +117,15 @@ export async function handleAnthropicMessages(
   request.log.info(
     `anthropic request | ${request.url} | stream=${isStream} | model=${model} | ua=${ua}`,
   );
+
+  if (isDebugEnabled()) {
+    debugLogRequest(request.id, {
+      method: request.method,
+      url: request.url,
+      headers: request.headers as Record<string, string | undefined>,
+      body,
+    });
+  }
 
   let diag: RequestDiagnostics | undefined;
   if (config.verbose) {

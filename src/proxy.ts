@@ -4,6 +4,7 @@ import { config, DEFAULT_MODEL } from './config';
 import { recordRequestComplete, requestStarted, requestFinished, Protocol } from './stats';
 import { readBodyWithLimit, extractUpstreamHeaders } from './util';
 import { isChatCompletionRequest } from './types/openai';
+import { isDebugEnabled, debugLogRequest } from './debug-logger';
 import {
   upstreamRequest,
   extractStreamUsage,
@@ -105,6 +106,15 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
   request.log.info(
     `request incoming | ${request.url} | stream=${isStream} | ${summarizeContentTypes(body)} | ua=${ua}`,
   );
+
+  if (isDebugEnabled()) {
+    debugLogRequest(request.id, {
+      method: request.method,
+      url: request.url,
+      headers: request.headers as Record<string, string | undefined>,
+      body,
+    });
+  }
 
   let diag: RequestDiagnostics | undefined;
   if (config.verbose) {

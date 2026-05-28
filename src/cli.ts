@@ -19,6 +19,7 @@ export interface CliOptions {
   anthropicBaseUrl?: string;
   maxRetries?: number;
   retryDelay?: number;
+  debug: boolean;
   verbose: boolean;
   monitor?: boolean;
   logDir?: string;
@@ -59,6 +60,7 @@ export function parseCli(): CliOptions {
     .option('--log-dir <dir>', 'log output directory (default: $XFYUN_LOG_DIR or XDG state dir)')
     .option('-c, --config <path>', 'path to config file')
     .option('--verbose', 'enable debug logging')
+    .option('--debug', 'enable request/response debug logging (writes to logs/debug/)')
     .option('--no-monitor', 'disable real-time monitor dashboard')
     .action((opts) => {
       result = {
@@ -69,7 +71,8 @@ export function parseCli(): CliOptions {
         anthropicBaseUrl: opts.anthropicBaseUrl || undefined,
         maxRetries: opts.maxRetries ? parseInt(opts.maxRetries, 10) : undefined,
         retryDelay: opts.retryDelay ? parseInt(opts.retryDelay, 10) : undefined,
-        verbose: opts.verbose ?? false,
+        debug: opts.debug ?? false,
+          verbose: opts.verbose ?? false,
         monitor: opts.monitor,
         logDir: opts.logDir || undefined,
         config: opts.config || undefined,
@@ -84,6 +87,7 @@ export function parseCli(): CliOptions {
     .option('-l, --list', 'list all dates with stats')
     .action((opts) => {
       result = {
+        debug: false,
         verbose: false,
         command: 'stats',
         statsDate: opts.date || undefined,
@@ -103,6 +107,7 @@ export function parseCli(): CliOptions {
         port: opts.port ? parseInt(opts.port, 10) : undefined,
         apiKey: opts.apiKey || undefined,
         setupNonInteractive: opts.nonInteractive ?? false,
+        debug: false,
         verbose: false,
       };
     });
@@ -119,6 +124,7 @@ export function parseCli(): CliOptions {
         setupNonInteractive: opts.nonInteractive ?? false,
         setupRestoreList: opts.list ?? false,
         setupRestoreLatest: opts.latest ?? false,
+        debug: false,
         verbose: false,
       };
     });

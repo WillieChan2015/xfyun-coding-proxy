@@ -10,6 +10,7 @@ import { config, DEFAULT_MODEL } from './config';
 import { readWithTimeout, readBodyWithLimit } from './util';
 import { extractTokenUsage, fmtTokens } from './util';
 import { rolloverDailyStats, recordRequestComplete, recordRequestStart, requestStarted, requestFinished, streamingStarted, streamingFinished, Protocol } from './stats';
+import { isDebugEnabled, debugLogUpstream, debugLogResponse } from './debug-logger';
 
 // HTTP 状态码级别的重试条件：429 限流、500 上游内部错误（含超时）、503 服务过载
 export const RETRYABLE_STATUS_CODES = new Set([429, 500, 503]);
@@ -721,6 +722,12 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       `upstream error | ${response.status} | ${durationMs}ms | retries=${retries}${errDetail}${diagStr} | ua=${ua} | body=${responseBodyText.slice(0, 300)}`,
     );
 
+    if (isDebugEnabled()) {
+      const upstreamHeaders: Record<string, string> = {};
+      response.headers.forEach((v, k) => { upstreamHeaders[k] = v; });
+      debugLogUpstream(reqId, { statusCode: response.status, headers: upstreamHeaders, bodyChunks: [responseBodyText] });
+    }
+
     recordRequestComplete({
       protocol,
       model,
@@ -889,6 +896,9 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
     let inputTokens: number | undefined;
     let outputTokens: number | undefined;
     let streamError: string | null = null;
+    // debug 日志收集：仅在 debug 模式开启时分配数组
+    const upstreamChunks: string[] | undefined = isDebugEnabled() ? [] : undefined;
+    const responseChunks: string[] | undefined = isDebugEnabled() ? [] : undefined;
 
     try {
       while (true) {
@@ -896,15 +906,18 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
         if (done) break;
 
         const rawChunk = Buffer.from(value).toString('utf-8');
+        upstreamChunks?.push(rawChunk);
         const filtered = sseFilter.filter(rawChunk, reqInfo.log);
         const cleaned = cleanStreamChunk ? cleanStreamChunk(filtered) : cleanXfyunFields(filtered);
 
         if (streamTransform) {
           const lines = streamTransform(cleaned);
           for (const line of lines) {
+            responseChunks?.push(line + '\n');
             rawReply.write(line + '\n');
           }
         } else {
+          responseChunks?.push(cleaned);
           rawReply.write(cleaned);
         }
 
@@ -947,8 +960,17 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       reqInfo.log.error(`stream error | ${durationMs}ms | ${errMsg}${diagStr} | ua=${ua}`);
 
       // 向 SSE 流发送错误事件，让客户端知道流异常终止
-      rawReply.write(formatStreamErrorEvent(errMsg));
+      const errorEvent = formatStreamErrorEvent(errMsg);
+      responseChunks?.push(errorEvent);
+      rawReply.write(errorEvent);
     } finally {
+      // 写入 debug 日志（在 rawReply.end() 之前，确保所有 chunk 已收集完毕）
+      if (isDebugEnabled()) {
+        const upstreamHeaders: Record<string, string> = {};
+        response.headers.forEach((v, k) => { upstreamHeaders[k] = v; });
+        debugLogUpstream(reqId, { statusCode: response.status, headers: upstreamHeaders, bodyChunks: upstreamChunks! });
+        debugLogResponse(reqId, { statusCode: 200, headers: hdrs as Record<string, string>, bodyChunks: responseChunks! });
+      }
       try { reader.releaseLock(); } catch { /* already released */ }
       try { rawReply.end(); } catch { /* client already closed */ }
     }
@@ -1122,6 +1144,13 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
   reqInfo.log.info(
     `request completed | ${durationMs}ms | ${tokenInfo} | ua=${ua}`.replace(/ \| $/, ''),
   );
+
+  if (isDebugEnabled()) {
+    const upstreamHeaders: Record<string, string> = {};
+    response.headers.forEach((v, k) => { upstreamHeaders[k] = v; });
+    debugLogUpstream(reqId, { statusCode: response.status, headers: upstreamHeaders, bodyChunks: [responseBodyText!] });
+    debugLogResponse(reqId, { statusCode: response.status, bodyChunks: [JSON.stringify(finalBody)] });
+  }
 
   recordRequestComplete({
     protocol,
