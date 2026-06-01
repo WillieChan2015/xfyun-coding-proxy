@@ -16,6 +16,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed / 修复
 
+## [0.0.7-beta.6] - 2026-06-01
+
+### Added / 新增
+
+- 新增 `XFYUN_MID_CONVERSATION_SYSTEM` 环境变量配置，默认开启，自动将 Claude Code 2.1.156+ 在 messages 数组中发送的 `role: "system"` 消息提取到 `system` 字段，解决讯飞 API 不支持该格式导致的 400 错误；设为 `false` 可关闭此行为。
+- Added `XFYUN_MID_CONVERSATION_SYSTEM` env config, enabled by default, which automatically extracts `role: "system"` messages from the messages array (sent by Claude Code 2.1.156+) into the `system` field, fixing the 400 error caused by xfyun API not supporting this format; set to `false` to disable.
+
+### Changed / 变更
+
+### Fixed / 修复
+
 ## [0.0.7-beta.5] - 2026-05-28
 
 ### Added / 新增
