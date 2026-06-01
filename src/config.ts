@@ -24,6 +24,7 @@ export const configSchema = z.object({
   statsFlushInterval: z.number().int().min(0, 'statsFlushInterval must be >= 0'),
   streamReadTimeout: z.number().int().min(1_000, 'streamReadTimeout must be >= 1000').max(300_000, 'streamReadTimeout must be <= 300000'),
   upstreamFetchTimeout: z.number().int().min(30_000, 'upstreamFetchTimeout must be >= 30000').max(600_000, 'upstreamFetchTimeout must be <= 600000'),
+  midConversationSystem: z.boolean(),
   configFile: z.string().optional(),
 });
 
@@ -44,6 +45,7 @@ const DEFAULT_CONFIG: ResolvedConfig = {
   statsFlushInterval: 60_000,
   streamReadTimeout: 60_000,
   upstreamFetchTimeout: 300_000,
+  midConversationSystem: true,
   configFile: undefined,
 };
 
@@ -132,6 +134,8 @@ export function loadConfig(cliOpts: CliOptions): ResolvedConfig {
     statsFlushInterval: parseInt(process.env.STATS_FLUSH_INTERVAL_MS || '60000', 10),
     streamReadTimeout: parseInt(process.env.STREAM_READ_TIMEOUT_MS || '60000', 10),
     upstreamFetchTimeout: parseInt(process.env.UPSTREAM_FETCH_TIMEOUT_MS || '300000', 10),
+    // 中途 system 消息转换：默认开启，将 messages 中的 role: "system" 提取到 system 字段
+    midConversationSystem: process.env.XFYUN_MID_CONVERSATION_SYSTEM !== 'false',
     configFile: envFile,
   };
 

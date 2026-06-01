@@ -8,7 +8,7 @@ export interface AnthropicMessagesRequest {
   model: string;
   max_tokens: number;
   messages: Array<{
-    role: 'user' | 'assistant';
+    role: 'user' | 'assistant' | 'system';
     content: string | Array<Record<string, unknown>>;
   }>;
   system?: string | Array<Record<string, unknown>>;

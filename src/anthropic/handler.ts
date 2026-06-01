@@ -5,6 +5,7 @@ import { formatAnthropicError } from '../errors';
 import { extractUpstreamHeaders } from '../util';
 import { isDebugEnabled, debugLogRequest } from '../debug-logger';
 import { ANTHROPIC_SSE_EVENTS } from './types';
+import { extractSystemMessages } from './system-extract';
 import type { AnthropicUsage } from './types';
 import type { UpstreamResult, RequestDiagnostics } from '../upstream';
 
@@ -111,6 +112,13 @@ export async function handleAnthropicMessages(
   const model = DEFAULT_MODEL;
   if (body) {
     body.model = model;
+  }
+
+  // Claude Code 2.1.156+ 启用 mid-conversation-system beta 后，
+  // 会在 messages 中插入 role: "system" 的消息，讯飞 API 不支持此格式。
+  // 默认开启（XFYUN_MID_CONVERSATION_SYSTEM=false 可关闭），自动提取到 system 字段
+  if (config.midConversationSystem && body) {
+    extractSystemMessages(body);
   }
 
   const ua = request.headers['user-agent'] ?? 'unknown';
