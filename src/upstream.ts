@@ -555,6 +555,8 @@ export async function fetchWithRetry(
 
 export interface UpstreamOptions {
   protocol: Protocol;
+  /** 解析后的模型 ID，由调用方通过 resolveModelId() 得到；未传时 fallback 到 DEFAULT_MODEL */
+  model?: string;
   upstreamUrl: string;
   headers: Record<string, string>;
   body: Record<string, unknown> | undefined;
@@ -639,7 +641,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
   if (isStream) streamingStarted();
 
   const startTime = Date.now();
-  const model = DEFAULT_MODEL;
+  const model = options.model ?? DEFAULT_MODEL;
   const ua = typeof reqInfo.headers['user-agent'] === 'string'
     ? reqInfo.headers['user-agent']
     : 'unknown';

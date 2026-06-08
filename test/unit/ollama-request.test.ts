@@ -6,8 +6,8 @@ describe('convertChatRequest', () => {
     const result = convertChatRequest({
       model: 'gemma3',
       messages: [{ role: 'user', content: 'hello' }],
-    });
-    expect(result.model).toBe('astron-code-latest');
+    }, 'xopdeepseekv4pro');
+    expect(result.model).toBe('xopdeepseekv4pro');
     expect(result.messages).toEqual([{ role: 'user', content: 'hello' }]);
     expect(result.stream).toBeUndefined();
   });
@@ -17,7 +17,7 @@ describe('convertChatRequest', () => {
       model: 'gemma3',
       messages: [{ role: 'user', content: 'hello' }],
       stream: true,
-    });
+    }, 'xsparkx2');
     expect(result.stream).toBe(true);
   });
 
@@ -26,7 +26,7 @@ describe('convertChatRequest', () => {
       model: 'gemma3',
       messages: [{ role: 'user', content: 'hello' }],
       options: { temperature: 0.7 },
-    });
+    }, 'xopglm5');
     expect(result.temperature).toBe(0.7);
   });
 
@@ -35,7 +35,7 @@ describe('convertChatRequest', () => {
       model: 'gemma3',
       messages: [{ role: 'user', content: 'hello' }],
       options: { top_p: 0.9 },
-    });
+    }, 'xopglm5');
     expect(result.top_p).toBe(0.9);
   });
 
@@ -44,7 +44,7 @@ describe('convertChatRequest', () => {
       model: 'gemma3',
       messages: [{ role: 'user', content: 'hello' }],
       options: { num_predict: 1024 },
-    });
+    }, 'xopdeepseekv4flash');
     expect(result.max_tokens).toBe(1024);
   });
 
@@ -53,7 +53,7 @@ describe('convertChatRequest', () => {
       model: 'gemma3',
       messages: [{ role: 'user', content: 'hello' }],
       options: { seed: 42 },
-    });
+    }, 'xopdeepseekv4flash');
     expect(result.seed).toBe(42);
   });
 
@@ -62,7 +62,7 @@ describe('convertChatRequest', () => {
       model: 'gemma3',
       messages: [{ role: 'user', content: 'hello' }],
       options: { stop: ['\n', 'END'] },
-    });
+    }, 'xopkimik26');
     expect(result.stop).toEqual(['\n', 'END']);
   });
 
@@ -71,7 +71,7 @@ describe('convertChatRequest', () => {
       model: 'gemma3',
       messages: [{ role: 'user', content: 'hello' }],
       options: { frequency_penalty: 0.5 },
-    });
+    }, 'xopkimik26');
     expect(result.frequency_penalty).toBe(0.5);
   });
 
@@ -80,7 +80,7 @@ describe('convertChatRequest', () => {
       model: 'gemma3',
       messages: [{ role: 'user', content: 'hello' }],
       options: { presence_penalty: 0.3 },
-    });
+    }, 'xopglm51');
     expect(result.presence_penalty).toBe(0.3);
   });
 
@@ -89,7 +89,7 @@ describe('convertChatRequest', () => {
       model: 'gemma3',
       messages: [{ role: 'user', content: 'hello' }],
       options: { top_k: 40, num_ctx: 2048, num_batch: 512 },
-    });
+    }, 'xopglm51');
     expect((result as Record<string, unknown>).top_k).toBeUndefined();
     expect((result as Record<string, unknown>).num_ctx).toBeUndefined();
     expect((result as Record<string, unknown>).num_batch).toBeUndefined();
@@ -104,7 +104,7 @@ describe('convertChatRequest', () => {
       model: 'gemma3',
       messages: [{ role: 'user', content: 'hello' }],
       tools,
-    });
+    }, 'xminimaxm25');
     expect(result.tools).toEqual(tools);
   });
 
@@ -114,7 +114,7 @@ describe('convertChatRequest', () => {
       messages: [{ role: 'user', content: 'hello' }],
       logprobs: true,
       top_logprobs: 5,
-    });
+    }, 'xminimaxm25');
     expect(result.logprobs).toBe(true);
     expect(result.top_logprobs).toBe(5);
   });
@@ -125,7 +125,7 @@ describe('convertChatRequest', () => {
       messages: [{ role: 'user', content: 'hello' }],
       keep_alive: '5m',
       think: true,
-    });
+    }, 'xopdeepseekv32');
     expect((result as Record<string, unknown>).keep_alive).toBeUndefined();
     expect((result as Record<string, unknown>).think).toBeUndefined();
   });
@@ -134,8 +134,8 @@ describe('convertChatRequest', () => {
     const result = convertChatRequest({
       model: 'gemma3',
       messages: [{ role: 'user', content: 'hello' }],
-    });
-    expect(result.model).toBe('astron-code-latest');
+    }, 'xopdeepseekv32');
+    expect(result.model).toBe('xopdeepseekv32');
     expect(result.temperature).toBeUndefined();
   });
 });
@@ -145,9 +145,9 @@ describe('convertGenerateRequest', () => {
     const result = convertGenerateRequest({
       model: 'gemma3',
       prompt: 'Why is the sky blue?',
-    });
+    }, 'xsparkx2flash');
     expect(result.messages).toEqual([{ role: 'user', content: 'Why is the sky blue?' }]);
-    expect(result.model).toBe('astron-code-latest');
+    expect(result.model).toBe('xsparkx2flash');
   });
 
   it('prepends system message when system field is present', () => {
@@ -155,7 +155,7 @@ describe('convertGenerateRequest', () => {
       model: 'gemma3',
       prompt: 'hello',
       system: 'You are a helpful assistant.',
-    });
+    }, 'xopqwen36v35b');
     expect(result.messages).toEqual([
       { role: 'system', content: 'You are a helpful assistant.' },
       { role: 'user', content: 'hello' },
@@ -167,7 +167,7 @@ describe('convertGenerateRequest', () => {
       model: 'gemma3',
       prompt: 'hello',
       options: { temperature: 0.8, num_predict: 512 },
-    });
+    }, 'xopglmv47flash');
     expect(result.temperature).toBe(0.8);
     expect(result.max_tokens).toBe(512);
   });
@@ -178,7 +178,7 @@ describe('convertGenerateRequest', () => {
       prompt: 'hello',
       template: '{{ .Prompt }}',
       context: [1, 2, 3],
-    });
+    }, 'xopqwen35v35b');
     expect((result as Record<string, unknown>).template).toBeUndefined();
     expect((result as Record<string, unknown>).context).toBeUndefined();
   });

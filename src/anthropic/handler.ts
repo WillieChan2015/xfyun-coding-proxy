@@ -1,5 +1,5 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { config, DEFAULT_MODEL } from '../config';
+import { config, resolveModelId } from '../config';
 import { upstreamRequest, cleanXfyunFieldsObj, summarizeRequestDiagnostics, handleUpstreamResult } from '../upstream';
 import { formatAnthropicError } from '../errors';
 import { extractUpstreamHeaders } from '../util';
@@ -90,7 +90,7 @@ function extractAnthropicStreamUsage(
  * Anthropic 协议 POST /anthropic/v1/messages 路由 handler
  *
  * 流程：
- * 1. 覆盖 model 为 astron-code-latest
+ * 1. 解析 model ID（resolveModelId：白名单校验 + 环境变量开关）
  * 2. 构建上游请求（认证头替换 + model 覆盖）
  * 3. 带重试地转发请求
  * 4. 根据流式/非流式分别处理响应
@@ -109,7 +109,7 @@ export async function handleAnthropicMessages(
   }
 
   // 覆盖 model
-  const model = DEFAULT_MODEL;
+  const model = resolveModelId(body?.model as string | undefined, request.log);
   if (body) {
     body.model = model;
   }
@@ -158,6 +158,7 @@ export async function handleAnthropicMessages(
   // 由 upstreamRequest 在确认上游 2xx 且有 body 后调用 rawReply.writeHeader
   const result: UpstreamResult = await upstreamRequest({
     protocol: 'anthropic',
+    model,
     upstreamUrl,
     headers,
     body,

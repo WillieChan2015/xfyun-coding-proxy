@@ -18,8 +18,8 @@ describe('convertChatResponse', () => {
       }],
       usage: { prompt_tokens: 20, completion_tokens: 100, total_tokens: 120 },
     };
-    const result = convertChatResponse(openai);
-    expect(result.model).toBe('astron-code-latest');
+    const result = convertChatResponse(openai, 'xopdeepseekv4pro');
+    expect(result.model).toBe('xopdeepseekv4pro');
     expect(result.message).toEqual({ role: 'assistant', content: 'Hello!' });
     expect(result.done).toBe(true);
     expect(result.done_reason).toBe('stop');
@@ -37,7 +37,7 @@ describe('convertChatResponse', () => {
         finish_reason: 'stop',
       }],
     };
-    const result = convertChatResponse(openai);
+    const result = convertChatResponse(openai, 'xsparkx2');
     expect(result.prompt_eval_count).toBeUndefined();
     expect(result.eval_count).toBeUndefined();
   });
@@ -46,9 +46,9 @@ describe('convertChatResponse', () => {
     const base = (reason: string) => ({
       choices: [{ index: 0, message: { role: 'assistant', content: '' }, finish_reason: reason }],
     });
-    expect(convertChatResponse(base('stop')).done_reason).toBe('stop');
-    expect(convertChatResponse(base('length')).done_reason).toBe('length');
-    expect(convertChatResponse(base('tool_calls')).done_reason).toBe('tool_calls');
+    expect(convertChatResponse(base('stop'), 'xsparkx2').done_reason).toBe('stop');
+    expect(convertChatResponse(base('length'), 'xsparkx2').done_reason).toBe('length');
+    expect(convertChatResponse(base('tool_calls'), 'xsparkx2').done_reason).toBe('tool_calls');
   });
 });
 
@@ -63,8 +63,8 @@ describe('convertGenerateResponse', () => {
       }],
       usage: { prompt_tokens: 10, completion_tokens: 50, total_tokens: 60 },
     };
-    const result = convertGenerateResponse(openai);
-    expect(result.model).toBe('astron-code-latest');
+    const result = convertGenerateResponse(openai, 'xopglm5');
+    expect(result.model).toBe('xopglm5');
     expect(result.response).toBe('The sky is blue.');
     expect(result.done).toBe(true);
     expect(result.done_reason).toBe('stop');
@@ -74,24 +74,22 @@ describe('convertGenerateResponse', () => {
 });
 
 describe('convertTagsResponse', () => {
-  it('converts OpenAI /v1/models to Ollama /api/tags', () => {
-    const openai = {
-      object: 'list',
-      data: [
-        { id: 'astron-code-latest', object: 'model', created: 1677652288, owned_by: 'xfyun' },
-      ],
-    };
-    const result = convertTagsResponse(openai);
-    expect(result.models).toHaveLength(1);
+  it('generates model list from SUPPORTED_MODELS', () => {
+    const result = convertTagsResponse();
+    // 1 默认模型 + 15 具体模型 = 16
+    expect(result.models).toHaveLength(16);
+    // 首位是默认模型
     expect(result.models[0].name).toBe('astron-code-latest');
     expect(result.models[0].model).toBe('astron-code-latest');
     expect(result.models[0].details.format).toBe('gguf');
   });
 
-  it('handles empty model list', () => {
-    const openai = { object: 'list', data: [] };
-    const result = convertTagsResponse(openai);
-    expect(result.models).toHaveLength(0);
+  it('fills parameter_size with contextLength for supported models', () => {
+    const result = convertTagsResponse();
+    // 第二个模型（第一个具体模型）的 parameter_size 应为上下文长度
+    const firstSupported = result.models[1];
+    expect(firstSupported.details.parameter_size).toBeTruthy();
+    expect(Number(firstSupported.details.parameter_size)).toBeGreaterThan(0);
   });
 });
 
@@ -109,25 +107,27 @@ describe('convertErrorToOllama', () => {
 
 describe('SSEToNDJSONConverter', () => {
   it('converts SSE data line to NDJSON chat chunk', () => {
-    const converter = new SSEToNDJSONConverter('chat');
+    const converter = new SSEToNDJSONConverter('chat', 'xopdeepseekv4pro');
     const sseLine = 'data: {"choices":[{"delta":{"content":"Hel"},"index":0}]}\n\n';
     const result = converter.convert(sseLine);
     expect(result).toHaveLength(1);
     expect(result[0]).toContain('"content":"Hel"');
     expect(result[0]).toContain('"done":false');
+    expect(result[0]).toContain('"model":"xopdeepseekv4pro"');
   });
 
   it('converts finish_reason to done:true chunk', () => {
-    const converter = new SSEToNDJSONConverter('chat');
+    const converter = new SSEToNDJSONConverter('chat', 'xsparkx2');
     const sseLine = 'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n';
     const result = converter.convert(sseLine);
     expect(result).toHaveLength(1);
     expect(result[0]).toContain('"done":true');
     expect(result[0]).toContain('"done_reason":"stop"');
+    expect(result[0]).toContain('"model":"xsparkx2"');
   });
 
   it('outputs content + done when both arrive together', () => {
-    const converter = new SSEToNDJSONConverter('chat');
+    const converter = new SSEToNDJSONConverter('chat', 'xopglm5');
     const sseLine = 'data: {"choices":[{"delta":{"content":"bye"},"finish_reason":"stop"}]}\n\n';
     const result = converter.convert(sseLine);
     expect(result).toHaveLength(2);
@@ -137,23 +137,24 @@ describe('SSEToNDJSONConverter', () => {
   });
 
   it('skips data: [DONE]', () => {
-    const converter = new SSEToNDJSONConverter('chat');
+    const converter = new SSEToNDJSONConverter('chat', 'xopglm5');
     const sseLine = 'data: [DONE]\n\n';
     const result = converter.convert(sseLine);
     expect(result).toHaveLength(0);
   });
 
   it('uses response field for generate endpoint', () => {
-    const converter = new SSEToNDJSONConverter('generate');
+    const converter = new SSEToNDJSONConverter('generate', 'xopdeepseekv4flash');
     const sseLine = 'data: {"choices":[{"delta":{"content":"Hel"},"index":0}]}\n\n';
     const result = converter.convert(sseLine);
     expect(result).toHaveLength(1);
     expect(result[0]).toContain('"response":"Hel"');
     expect(result[0]).not.toContain('"message"');
+    expect(result[0]).toContain('"model":"xopdeepseekv4flash"');
   });
 
   it('extracts usage from final chunk', () => {
-    const converter = new SSEToNDJSONConverter('chat');
+    const converter = new SSEToNDJSONConverter('chat', 'xopdeepseekv4flash');
     const sseLine = 'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":100}}\n\n';
     const result = converter.convert(sseLine);
     expect(result).toHaveLength(1);
@@ -162,7 +163,7 @@ describe('SSEToNDJSONConverter', () => {
   });
 
   it('handles empty input', () => {
-    const converter = new SSEToNDJSONConverter('chat');
+    const converter = new SSEToNDJSONConverter('chat', 'xopkimik26');
     const result = converter.convert('');
     expect(result).toHaveLength(0);
   });

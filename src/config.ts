@@ -9,6 +9,67 @@ import { CliOptions } from './cli';
 /** 代理强制覆盖的模型 ID，所有协议路由统一使用 */
 export const DEFAULT_MODEL = 'astron-code-latest';
 
+/** 支持的讯飞模型元数据 */
+export interface SupportedModel {
+  /** 讯飞平台模型 ID，如 "xopdeepseekv4pro" */
+  id: string;
+  /** 显示名称，如 "DeepSeek-V4-Pro" */
+  name: string;
+  /** 上下文长度，如 1_000_000 */
+  contextLength: number;
+}
+
+/** 支持的讯飞模型列表（硬编码白名单），新增模型时同步更新此数组 */
+export const SUPPORTED_MODELS: SupportedModel[] = [
+  { id: 'xsparkx2',         name: 'Spark X2',            contextLength: 128_000 },
+  { id: 'xopglm5',          name: 'GLM-5',               contextLength: 200_000 },
+  { id: 'xopdeepseekv4pro', name: 'DeepSeek-V4-Pro',     contextLength: 1_000_000 },
+  { id: 'xopdeepseekv4flash', name: 'DeepSeek-V4-Flash', contextLength: 1_000_000 },
+  { id: 'xopkimik26',       name: 'Kimi-K2.6',           contextLength: 256_000 },
+  { id: 'xopglm51',         name: 'GLM-5.1',             contextLength: 200_000 },
+  { id: 'xminimaxm25',      name: 'MiniMax-M2.5',        contextLength: 128_000 },
+  { id: 'xopkimik25',       name: 'Kimi-K2.5',           contextLength: 128_000 },
+  { id: 'xopdeepseekv32',   name: 'DeepSeek-V3.2',       contextLength: 128_000 },
+  { id: 'xsparkx2flash',    name: 'Spark-X2-Flash',      contextLength: 256_000 },
+  { id: 'xopqwen36v35b',    name: 'Qwen3.6-35B-A3B',    contextLength: 128_000 },
+  { id: 'xopglmv47flash',   name: 'GLM-4.7-Flash',       contextLength: 128_000 },
+  { id: 'xopqwen35v35b',    name: 'Qwen3.5-35B-A3B',    contextLength: 128_000 },
+  { id: 'xop3qwencodernext', name: 'Qwen3-Coder-Next-FP8', contextLength: 256_000 },
+  { id: 'xopqwen35397b',    name: 'Qwen3.5-397B-A17B',  contextLength: 256_000 },
+];
+
+/** 快速查找：模型 ID → SupportedModel，用于 resolveModelId 白名单校验 */
+export const MODEL_MAP = new Map<string, SupportedModel>(
+  SUPPORTED_MODELS.map(m => [m.id, m]),
+);
+
+/**
+ * 解析请求中的模型 ID
+ * - 开关关闭（默认）：始终返回 DEFAULT_MODEL
+ * - 开关开启：匹配白名单则返回原值，否则回退并记录日志
+ *
+ * ⚠️ 开关状态在函数内部动态读取 process.env，而非模块顶层求值。
+ * 原因：loadConfig() 通过 dotenv.config() 加载 .env 到 process.env，
+ * 若在 import 时求值，dotenv 尚未执行，环境变量始终为 undefined。
+ */
+export function resolveModelId(
+  requestedModel: string | undefined,
+  log?: { warn: (msg: string) => void },
+): string {
+  // 动态读取，确保 dotenv 加载后值正确
+  if (process.env.XFYUN_ALLOW_CUSTOM_MODEL !== 'true') {
+    return DEFAULT_MODEL;
+  }
+  if (!requestedModel || requestedModel === DEFAULT_MODEL) {
+    return DEFAULT_MODEL;
+  }
+  if (MODEL_MAP.has(requestedModel)) {
+    return requestedModel;
+  }
+  log?.warn(`Unsupported model "${requestedModel}", fallback to ${DEFAULT_MODEL}`);
+  return DEFAULT_MODEL;
+}
+
 export const configSchema = z.object({
   port: z.number().int().min(1, 'Port must be >= 1').max(65535, 'Port must be <= 65535'),
   apiKey: z.string().min(1, 'XFYUN_API_KEY is required'),
