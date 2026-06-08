@@ -77,7 +77,7 @@ async function handleOllamaProxy(
 
   const ua = request.headers['user-agent'] ?? 'unknown';
   request.log.info(
-    `ollama ${endpoint} | stream=${isStream} | model=${rawBody.model ?? 'unknown'} | ua=${ua}`,
+    `ollama ${endpoint} | stream=${isStream} | model=${model} (requested: ${rawBody.model ?? 'unknown'}) | ua=${ua}`,
   );
 
   if (isDebugEnabled()) {

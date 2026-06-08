@@ -51,6 +51,14 @@ describe('resolveModelId', () => {
     expect(resolveModelId('')).toBe(DEFAULT_MODEL);
   });
 
+  it('开关开启 + model 为 DEFAULT_MODEL → 直接返回，不产生 warn', () => {
+    process.env.XFYUN_ALLOW_CUSTOM_MODEL = 'true';
+    const warnings: string[] = [];
+    const mockLog = { warn: (msg: string) => warnings.push(msg) };
+    expect(resolveModelId(DEFAULT_MODEL, mockLog)).toBe(DEFAULT_MODEL);
+    expect(warnings).toHaveLength(0);
+  });
+
   it('开关开启 + model 为 undefined → 返回 DEFAULT_MODEL', () => {
     process.env.XFYUN_ALLOW_CUSTOM_MODEL = 'true';
     expect(resolveModelId(undefined)).toBe(DEFAULT_MODEL);

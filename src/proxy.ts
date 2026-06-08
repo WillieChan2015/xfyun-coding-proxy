@@ -75,7 +75,7 @@ export {
  * 代理请求处理主函数
  *
  * 流程：
- * 1. 强制覆盖 model 为 astron-code-latest
+ * 1. 解析 model ID（resolveModelId：白名单校验 + 环境变量开关）
  * 2. 构建上游请求（白名单 headers + API Key 注入 + 路径重写）
  * 3. 带重试地转发请求
  * 4. 根据流式/非流式分别处理响应
@@ -186,7 +186,7 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
 }
 
 /**
- * GET 请求透传代理（如 /v1/models）
+ * GET 请求透传代理（如 /v1/completions 等非模型列表 GET 路由）
  * 不注入 body、不覆盖 model、不做 SSE 过滤，仅路径重写 + API Key 注入 + 透传响应
  */
 export async function handleGetProxy(

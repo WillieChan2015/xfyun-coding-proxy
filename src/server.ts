@@ -5,6 +5,7 @@ import { ResolvedConfig, config, DEFAULT_MODEL, SUPPORTED_MODELS } from './confi
 import { handleProxy, handleGetProxy } from './proxy';
 import { handleOllamaChat, handleOllamaGenerate } from './ollama/handler';
 import { handleAnthropicMessages } from './anthropic/handler';
+import { convertTagsResponse } from './ollama/response';
 import { estimateInputTokens } from './util';
 import { printSessionSummary, initDailyStats, saveDailyStats, saveDailyStatsAsync, rolloverDailyStats, dailyStats, recordRequestComplete, requestFinished, getRequestLog, statsEmitter, sessionStats, getActiveRequests, getStreamingRequests, getLatencyStats, resetDailyStats, setRolloverFn, setSaveFn, isDailyStatsDirty, setDailyStatsDirty } from './stats';
 import { checkForUpdate } from './update-check';
@@ -48,35 +49,7 @@ function setTerminalTitle(title: string): void {
 function registerOllamaStaticRoutes(server: FastifyInstance, prefix: string): void {
   server.get(`${prefix}/api/tags`, async () => {
     // 本地生成：讯飞上游 /v2/models 返回空数组，透传无意义
-    const defaultModel = {
-      name: DEFAULT_MODEL,
-      model: DEFAULT_MODEL,
-      modified_at: new Date().toISOString(),
-      size: 0,
-      digest: '',
-      details: {
-        parent_model: '',
-        format: 'gguf',
-        family: 'astron',
-        parameter_size: '',
-        quantization_level: '',
-      },
-    };
-    const supportedModels = SUPPORTED_MODELS.map((m) => ({
-      name: m.id,
-      model: m.id,
-      modified_at: new Date().toISOString(),
-      size: 0,
-      digest: '',
-      details: {
-        parent_model: '',
-        format: 'gguf',
-        family: 'astron',
-        parameter_size: String(m.contextLength),
-        quantization_level: '',
-      },
-    }));
-    return { models: [defaultModel, ...supportedModels] };
+    return convertTagsResponse();
   });
   server.get(`${prefix}/api/version`, async () => {
     return { version: '0.12.6' };

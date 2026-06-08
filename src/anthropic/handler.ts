@@ -90,7 +90,7 @@ function extractAnthropicStreamUsage(
  * Anthropic 协议 POST /anthropic/v1/messages 路由 handler
  *
  * 流程：
- * 1. 覆盖 model 为 astron-code-latest
+ * 1. 解析 model ID（resolveModelId：白名单校验 + 环境变量开关）
  * 2. 构建上游请求（认证头替换 + model 覆盖）
  * 3. 带重试地转发请求
  * 4. 根据流式/非流式分别处理响应

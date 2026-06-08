@@ -60,7 +60,7 @@ export function resolveModelId(
   if (process.env.XFYUN_ALLOW_CUSTOM_MODEL !== 'true') {
     return DEFAULT_MODEL;
   }
-  if (!requestedModel) {
+  if (!requestedModel || requestedModel === DEFAULT_MODEL) {
     return DEFAULT_MODEL;
   }
   if (MODEL_MAP.has(requestedModel)) {
