@@ -1,17 +1,18 @@
-import { DEFAULT_MODEL } from '../config';
+import { SUPPORTED_MODELS, DEFAULT_MODEL } from '../config';
 import type { OllamaEndpoint } from './types';
 
 /**
  * 将 OpenAI 非流式 chat completion 响应转换为 Ollama /api/chat 响应
+ * @param model 解析后的模型 ID
  */
-export function convertChatResponse(openai: Record<string, unknown>): Record<string, unknown> {
+export function convertChatResponse(openai: Record<string, unknown>, model: string): Record<string, unknown> {
   const choices = openai.choices as Array<Record<string, unknown>> | undefined;
   const choice = choices?.[0];
   const message = choice?.message as Record<string, unknown> | undefined;
   const usage = openai.usage as Record<string, unknown> | undefined;
 
   return {
-    model: DEFAULT_MODEL,
+    model,
     created_at: new Date().toISOString(),
     message: message ?? { role: 'assistant', content: '' },
     done: true,
@@ -24,15 +25,16 @@ export function convertChatResponse(openai: Record<string, unknown>): Record<str
 /**
  * 将 OpenAI 非流式 chat completion 响应转换为 Ollama /api/generate 响应
  * 用 response（纯文本）替代 message（对象）
+ * @param model 解析后的模型 ID
  */
-export function convertGenerateResponse(openai: Record<string, unknown>): Record<string, unknown> {
+export function convertGenerateResponse(openai: Record<string, unknown>, model: string): Record<string, unknown> {
   const choices = openai.choices as Array<Record<string, unknown>> | undefined;
   const choice = choices?.[0];
   const message = choice?.message as Record<string, unknown> | undefined;
   const usage = openai.usage as Record<string, unknown> | undefined;
 
   return {
-    model: DEFAULT_MODEL,
+    model,
     created_at: new Date().toISOString(),
     response: (message?.content as string) ?? '',
     done: true,
@@ -43,26 +45,40 @@ export function convertGenerateResponse(openai: Record<string, unknown>): Record
 }
 
 /**
- * 将 OpenAI /v1/models 响应转换为 Ollama /api/tags 响应
+ * 从 SUPPORTED_MODELS 本地生成 Ollama /api/tags 响应
+ * 讯飞上游 /v2/models 返回空数组，不再请求上游，改为本地生成
  */
-export function convertTagsResponse(openai: Record<string, unknown>): { models: Array<Record<string, unknown>> } {
-  const data = (openai.data as Array<Record<string, unknown>>) ?? [];
-  return {
-    models: data.map((m) => ({
-      name: m.id ?? DEFAULT_MODEL,
-      model: m.id ?? DEFAULT_MODEL,
-      modified_at: m.created ? new Date((m.created as number) * 1000).toISOString() : new Date().toISOString(),
-      size: 0,
-      digest: '',
-      details: {
-        parent_model: '',
-        format: 'gguf',
-        family: 'astron',
-        parameter_size: '',
-        quantization_level: '',
-      },
-    })),
+export function convertTagsResponse(): { models: Array<Record<string, unknown>> } {
+  // 默认模型始终在首位
+  const defaultModel = {
+    name: DEFAULT_MODEL,
+    model: DEFAULT_MODEL,
+    modified_at: new Date().toISOString(),
+    size: 0,
+    digest: '',
+    details: {
+      parent_model: '',
+      format: 'gguf',
+      family: 'astron',
+      parameter_size: '',
+      quantization_level: '',
+    },
   };
+  const supportedModels = SUPPORTED_MODELS.map((m) => ({
+    name: m.id,
+    model: m.id,
+    modified_at: new Date().toISOString(),
+    size: 0,
+    digest: '',
+    details: {
+      parent_model: '',
+      format: 'gguf',
+      family: 'astron',
+      parameter_size: String(m.contextLength),
+      quantization_level: '',
+    },
+  }));
+  return { models: [defaultModel, ...supportedModels] };
 }
 
 /**
@@ -80,9 +96,11 @@ export function convertErrorToOllama(openai: Record<string, unknown>): { error: 
  */
 export class SSEToNDJSONConverter {
   private endpoint: OllamaEndpoint;
+  private model: string;
 
-  constructor(endpoint: OllamaEndpoint) {
+  constructor(endpoint: OllamaEndpoint, model: string) {
     this.endpoint = endpoint;
+    this.model = model;
   }
 
   /**
@@ -139,7 +157,7 @@ export class SSEToNDJSONConverter {
   /** 构建增量内容 NDJSON 行（done: false） */
   private buildChunk(content: string, done: boolean): string {
     const base = {
-      model: DEFAULT_MODEL,
+      model: this.model,
       created_at: new Date().toISOString(),
       done,
     };
@@ -153,7 +171,7 @@ export class SSEToNDJSONConverter {
   /** 构建结束 NDJSON 行（done: true），附带 done_reason 和 token 用量 */
   private buildDoneChunk(doneReason: string, usage?: Record<string, unknown>): string {
     const base: Record<string, unknown> = {
-      model: DEFAULT_MODEL,
+      model: this.model,
       created_at: new Date().toISOString(),
       done: true,
       done_reason: doneReason,

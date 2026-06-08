@@ -1,4 +1,3 @@
-import { DEFAULT_MODEL } from '../config';
 import type { OllamaChatRequest, OllamaGenerateRequest, OllamaOptions } from './types';
 
 /**
@@ -35,9 +34,14 @@ function liftOptions(options: OllamaOptions | undefined): Record<string, unknown
 /**
  * 将 Ollama /api/chat 请求转换为 OpenAI /v1/chat/completions 请求
  */
-export function convertChatRequest(ollama: OllamaChatRequest): Record<string, unknown> {
+/**
+ * 将 Ollama /api/chat 请求转换为 OpenAI /v1/chat/completions 请求
+ * @param ollama Ollama 请求体
+ * @param model 解析后的模型 ID（由 resolveModelId 得到）
+ */
+export function convertChatRequest(ollama: OllamaChatRequest, model: string): Record<string, unknown> {
   const result: Record<string, unknown> = {
-    model: DEFAULT_MODEL,
+    model,
     messages: ollama.messages,
     ...liftOptions(ollama.options),
   };
@@ -54,8 +58,10 @@ export function convertChatRequest(ollama: OllamaChatRequest): Record<string, un
 /**
  * 将 Ollama /api/generate 请求转换为 OpenAI /v1/chat/completions 请求
  * prompt → messages, system → system message, template/context 丢弃
+ * @param ollama Ollama 请求体
+ * @param model 解析后的模型 ID（由 resolveModelId 得到）
  */
-export function convertGenerateRequest(ollama: OllamaGenerateRequest): Record<string, unknown> {
+export function convertGenerateRequest(ollama: OllamaGenerateRequest, model: string): Record<string, unknown> {
   const messages: Array<{ role: string; content: string }> = [];
   if (ollama.system) {
     messages.push({ role: 'system', content: ollama.system });
@@ -63,7 +69,7 @@ export function convertGenerateRequest(ollama: OllamaGenerateRequest): Record<st
   messages.push({ role: 'user', content: ollama.prompt });
 
   const result: Record<string, unknown> = {
-    model: DEFAULT_MODEL,
+    model,
     messages,
     ...liftOptions(ollama.options),
   };

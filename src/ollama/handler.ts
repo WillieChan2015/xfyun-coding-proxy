@@ -1,5 +1,5 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { config } from '../config';
+import { config, resolveModelId } from '../config';
 import {
   upstreamRequest,
   extractStreamUsage,
@@ -8,14 +8,11 @@ import {
   handleUpstreamResult,
 } from '../upstream';
 import type { UpstreamResult } from '../upstream';
-import { recordRequestComplete, requestStarted, requestFinished } from '../stats';
-import { readBodyWithLimit } from '../util';
 import { isDebugEnabled, debugLogRequest } from '../debug-logger';
 import { convertChatRequest, convertGenerateRequest } from './request';
 import {
   convertChatResponse,
   convertGenerateResponse,
-  convertTagsResponse,
   convertErrorToOllama,
   SSEToNDJSONConverter,
 } from './response';
@@ -43,91 +40,6 @@ export async function handleOllamaGenerate(
   await handleOllamaProxy(request, reply, 'generate');
 }
 
-/**
- * Ollama 协议 GET /ollama/api/tags 路由 handler
- * 请求上游 /v1/models 并将 OpenAI 格式转换为 Ollama /api/tags 格式
- */
-export async function handleOllamaTags(
-  request: FastifyRequest,
-  reply: FastifyReply,
-): Promise<void> {
-  requestStarted();
-  const ua = request.headers['user-agent'] ?? 'unknown';
-  const upstreamUrl = buildUpstreamUrl('/v1/models');
-
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${config.apiKey}`,
-  };
-
-  try {
-    const startTime = Date.now();
-    const response = await fetch(upstreamUrl, {
-      method: 'GET',
-      headers,
-      signal: AbortSignal.timeout(30_000),
-    });
-
-    const body = await readBodyWithLimit(response);
-    const latencyMs = Date.now() - startTime;
-    request.log.info(`ollama tags | ${response.status}`);
-
-    if (!response.ok) {
-      reply.status(response.status).send({ error: body });
-      recordRequestComplete({
-        protocol: 'ollama',
-        model: 'unknown',
-        inputTokens: 0,
-        outputTokens: 0,
-        latencyMs,
-        success: false,
-        requestId: request.id,
-        path: request.url,
-        ua,
-        retries: 0,
-        error: `upstream ${response.status}`,
-      });
-      requestFinished();
-      return;
-    }
-
-    const openai = JSON.parse(body) as Record<string, unknown>;
-    const ollamaTags = convertTagsResponse(openai);
-
-    reply.status(200).send(ollamaTags);
-    recordRequestComplete({
-      protocol: 'ollama',
-      model: 'unknown',
-      inputTokens: 0,
-      outputTokens: 0,
-      latencyMs,
-      success: true,
-      requestId: request.id,
-      path: request.url,
-      ua,
-      retries: 0,
-    });
-    requestFinished();
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    request.log.error(`ollama tags error | ${msg}`);
-    recordRequestComplete({
-      protocol: 'ollama',
-      model: 'unknown',
-      inputTokens: 0,
-      outputTokens: 0,
-      latencyMs: 0,
-      success: false,
-      requestId: request.id,
-      path: request.url,
-      ua,
-      retries: 0,
-      error: msg,
-    });
-    reply.status(500).send({ error: msg });
-    requestFinished();
-  }
-}
-
 /** 流式错误时通过 raw.write 写入的 NDJSON 错误行格式 */
 function formatOllamaStreamErrorEvent(errMsg: string): string {
   return JSON.stringify({ error: `stream interrupted: ${errMsg}` }) + '\n';
@@ -150,12 +62,15 @@ async function handleOllamaProxy(
 ): Promise<void> {
   const rawBody = request.body as Record<string, unknown>;
 
+  // 在请求转换之前解析模型 ID
+  const model = resolveModelId(rawBody.model as string | undefined, request.log);
+
   // ---- 步骤 1：请求转换 Ollama → OpenAI ----
   let openaiBody: Record<string, unknown>;
   if (endpoint === 'chat') {
-    openaiBody = convertChatRequest(rawBody as unknown as OllamaChatRequest);
+    openaiBody = convertChatRequest(rawBody as unknown as OllamaChatRequest, model);
   } else {
-    openaiBody = convertGenerateRequest(rawBody as unknown as OllamaGenerateRequest);
+    openaiBody = convertGenerateRequest(rawBody as unknown as OllamaGenerateRequest, model);
   }
 
   const isStream = openaiBody.stream === true;
@@ -185,10 +100,11 @@ async function handleOllamaProxy(
   // 流式响应头延迟写入：不再提前 writeHead(200)，
   // 由 upstreamRequest 在确认上游 2xx 且有 body 后调用 rawReply.writeHeader
   // ---- 步骤 3：通过 upstreamRequest 统一转发 ----
-  const ndjsonConverter = new SSEToNDJSONConverter(endpoint);
+  const ndjsonConverter = new SSEToNDJSONConverter(endpoint, model);
 
   const result: UpstreamResult = await upstreamRequest({
     protocol: 'ollama',
+    model,
     upstreamUrl,
     headers: upstreamHeaders,
     body: openaiBody,
@@ -244,8 +160,8 @@ async function handleOllamaProxy(
     formatNonStreamSuccess: (result) => {
       if (result.responseBody) {
         return endpoint === 'chat'
-          ? convertChatResponse(result.responseBody)
-          : convertGenerateResponse(result.responseBody);
+          ? convertChatResponse(result.responseBody, model)
+          : convertGenerateResponse(result.responseBody, model);
       }
       return result.responseBody;
     },

@@ -1,5 +1,5 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { config, DEFAULT_MODEL } from '../config';
+import { config, resolveModelId } from '../config';
 import { upstreamRequest, cleanXfyunFieldsObj, summarizeRequestDiagnostics, handleUpstreamResult } from '../upstream';
 import { formatAnthropicError } from '../errors';
 import { extractUpstreamHeaders } from '../util';
@@ -109,7 +109,7 @@ export async function handleAnthropicMessages(
   }
 
   // 覆盖 model
-  const model = DEFAULT_MODEL;
+  const model = resolveModelId(body?.model as string | undefined, request.log);
   if (body) {
     body.model = model;
   }
@@ -158,6 +158,7 @@ export async function handleAnthropicMessages(
   // 由 upstreamRequest 在确认上游 2xx 且有 body 后调用 rawReply.writeHeader
   const result: UpstreamResult = await upstreamRequest({
     protocol: 'anthropic',
+    model,
     upstreamUrl,
     headers,
     body,

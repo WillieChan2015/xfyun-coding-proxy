@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { formatOpenAIError } from './errors';
-import { config, DEFAULT_MODEL } from './config';
+import { config, resolveModelId } from './config';
 import { recordRequestComplete, requestStarted, requestFinished, Protocol } from './stats';
 import { readBodyWithLimit, extractUpstreamHeaders } from './util';
 import { isChatCompletionRequest } from './types/openai';
@@ -97,7 +97,7 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     body.stream = body.stream === 'true';
   }
 
-  const model = DEFAULT_MODEL;
+  const model = resolveModelId(body?.model as string | undefined, request.log);
   if (body) {
     body.model = model;
   }
@@ -140,6 +140,7 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
   // 由 upstreamRequest 在确认上游 2xx 且有 body 后调用 rawReply.writeHeader
   const result: UpstreamResult = await upstreamRequest({
     protocol: protocol as Protocol,
+    model,
     upstreamUrl,
     headers,
     body,

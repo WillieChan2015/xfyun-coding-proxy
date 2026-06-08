@@ -1,7 +1,7 @@
 import path from 'node:path';
 import Fastify, { FastifyInstance, FastifyError, FastifyRequest, FastifyReply } from 'fastify';
 import cors from '@fastify/cors';
-import { ResolvedConfig, config, DEFAULT_MODEL } from './config';
+import { ResolvedConfig, config, DEFAULT_MODEL, SUPPORTED_MODELS } from './config';
 import { handleProxy, handleGetProxy } from './proxy';
 import { handleOllamaChat, handleOllamaGenerate } from './ollama/handler';
 import { handleAnthropicMessages } from './anthropic/handler';
@@ -13,6 +13,26 @@ import { getPackageVersion, getPackageName } from './cli';
 const name = getPackageName();
 const version = getPackageVersion();
 let flushTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * 生成 OpenAI /v1/models 格式的模型列表
+ * 讯飞上游 /v2/models 返回空数组，本地生成供 IDE 发现可用模型
+ */
+function buildModelsList() {
+  return {
+    object: 'list' as const,
+    data: [
+      { id: DEFAULT_MODEL, object: 'model' as const, created: 1_700_000_000, owned_by: 'xfyun' },
+      ...SUPPORTED_MODELS.map(m => ({
+        id: m.id,
+        object: 'model' as const,
+        created: 1_700_000_000,
+        owned_by: 'xfyun',
+        context_length: m.contextLength,
+      })),
+    ],
+  };
+}
 
 // 设置/恢复终端标题：OSC 转义序列，仅对真实 TTY 有效
 function setTerminalTitle(title: string): void {
@@ -27,22 +47,36 @@ function setTerminalTitle(title: string): void {
  */
 function registerOllamaStaticRoutes(server: FastifyInstance, prefix: string): void {
   server.get(`${prefix}/api/tags`, async () => {
-    return {
-      models: [{
-        name: DEFAULT_MODEL,
-        model: DEFAULT_MODEL,
-        modified_at: new Date().toISOString(),
-        size: 0,
-        digest: '',
-        details: {
-          parent_model: '',
-          format: 'gguf',
-          family: 'astron',
-          parameter_size: '',
-          quantization_level: '',
-        },
-      }],
+    // 本地生成：讯飞上游 /v2/models 返回空数组，透传无意义
+    const defaultModel = {
+      name: DEFAULT_MODEL,
+      model: DEFAULT_MODEL,
+      modified_at: new Date().toISOString(),
+      size: 0,
+      digest: '',
+      details: {
+        parent_model: '',
+        format: 'gguf',
+        family: 'astron',
+        parameter_size: '',
+        quantization_level: '',
+      },
     };
+    const supportedModels = SUPPORTED_MODELS.map((m) => ({
+      name: m.id,
+      model: m.id,
+      modified_at: new Date().toISOString(),
+      size: 0,
+      digest: '',
+      details: {
+        parent_model: '',
+        format: 'gguf',
+        family: 'astron',
+        parameter_size: String(m.contextLength),
+        quantization_level: '',
+      },
+    }));
+    return { models: [defaultModel, ...supportedModels] };
   });
   server.get(`${prefix}/api/version`, async () => {
     return { version: '0.12.6' };
@@ -230,6 +264,8 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
     });
   });
 
+  // 本地生成模型列表：讯飞上游 /v2/models 返回空数组，透传无意义，改为本地生成
+  server.get('/v1/models', async () => buildModelsList());
   server.post('/v1/*', handleProxy);
   server.get('/v1/*', handleGetProxy);
 
@@ -251,24 +287,14 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
     request.log.info(`anthropic count_tokens | estimated=${inputTokens}`);
     reply.send({ input_tokens: inputTokens });
   });
-  server.get('/anthropic/v1/models', async () => {
-    return {
-      object: 'list',
-      data: [{
-        id: DEFAULT_MODEL,
-        object: 'model',
-        created: 1_700_000_000,
-        owned_by: 'xfyun',
-      }],
-    };
-  });
+  server.get('/anthropic/v1/models', async () => buildModelsList());
 
   // Ollama 协议路由：带 /ollama 前缀（Base URL = http://localhost:3000/ollama）
   server.post('/ollama/api/chat', handleOllamaChat);
   server.post('/ollama/api/generate', handleOllamaGenerate);
   // VS Code Continue.dev 等工具在 Ollama 模式下使用 OpenAI 兼容路径
   server.post('/ollama/v1/chat/completions', handleProxy);
-  server.get('/ollama/v1/models', handleGetProxy);
+  server.get('/ollama/v1/models', async () => buildModelsList());
   registerOllamaStaticRoutes(server, '/ollama');
 
   // Ollama 协议路由：不带前缀（Base URL = http://localhost:3000，VSCode 等工具直接拼接 /api/tags）
