@@ -1,13 +1,13 @@
 import path from 'node:path';
 import Fastify, { FastifyInstance, FastifyError, FastifyRequest, FastifyReply } from 'fastify';
 import cors from '@fastify/cors';
-import { ResolvedConfig, config, DEFAULT_MODEL, SUPPORTED_MODELS } from './config';
+import { ResolvedConfig, config, DEFAULT_MODEL, SUPPORTED_MODELS, resolveModelId } from './config';
 import { handleProxy, handleGetProxy } from './proxy';
 import { handleOllamaChat, handleOllamaGenerate } from './ollama/handler';
 import { handleAnthropicMessages } from './anthropic/handler';
-import { convertTagsResponse } from './ollama/response';
+import { convertTagsResponse, buildShowResponse } from './ollama/response';
 import { estimateInputTokens } from './util';
-import { printSessionSummary, initDailyStats, saveDailyStats, saveDailyStatsAsync, rolloverDailyStats, dailyStats, recordRequestComplete, requestFinished, getRequestLog, statsEmitter, sessionStats, getActiveRequests, getStreamingRequests, getLatencyStats, resetDailyStats, setRolloverFn, setSaveFn, isDailyStatsDirty, setDailyStatsDirty } from './stats';
+import { printSessionSummary, initDailyStats, saveDailyStats, saveDailyStatsAsync, rolloverDailyStats, dailyStats, recordRequestComplete, requestFinished, getRequestLog, statsEmitter, sessionStats, getActiveRequests, getStreamingRequests, getLatencyStats, resetDailyStats, setRolloverFn, setSaveFn, isDailyStatsDirty, setDailyStatsDirty, Protocol } from './stats';
 import { checkForUpdate } from './update-check';
 import { getPackageVersion, getPackageName } from './cli';
 
@@ -23,12 +23,13 @@ function buildModelsList() {
   return {
     object: 'list' as const,
     data: [
-      { id: DEFAULT_MODEL, object: 'model' as const, created: 1_700_000_000, owned_by: 'xfyun' },
+      { id: DEFAULT_MODEL, object: 'model' as const, created: 1_700_000_000, owned_by: 'xfyun', name: DEFAULT_MODEL },
       ...SUPPORTED_MODELS.map(m => ({
         id: m.id,
         object: 'model' as const,
         created: 1_700_000_000,
         owned_by: 'xfyun',
+        name: m.name,
         context_length: m.contextLength,
       })),
     ],
@@ -43,35 +44,47 @@ function setTerminalTitle(title: string): void {
 }
 
 /**
+ * 记录静态路由请求的 pino 日志 + 面板日志
+ * 静态路由不走 upstreamRequest，需手动调用以在 Ink 面板 LogStream 中显示
+ */
+function logStaticRequest(
+  request: FastifyRequest,
+  protocol: Protocol,
+  label: string,
+  method: string = request.method,
+): void {
+  const start = Date.now();
+  request.log.info(`${label} | ${request.url}`);
+  // 利用 JS 微任务：在 handler return 之后（响应已发送）再计算延迟
+  // 避免在同步 handler 中 latencyMs ≈ 0 无参考价值
+  queueMicrotask(() => {
+    recordRequestComplete({
+      protocol, model: DEFAULT_MODEL, inputTokens: 0, outputTokens: 0,
+      latencyMs: Date.now() - start, success: true, retries: 0,
+      method, path: request.url, ua: request.headers['user-agent'] ?? 'unknown',
+    });
+  });
+}
+
+/**
  * 注册 Ollama 静态路由（/api/tags、/api/version、/api/show）
  * prefix 为 '/ollama' 或 ''，避免重复定义相同的 handler
  */
 function registerOllamaStaticRoutes(server: FastifyInstance, prefix: string): void {
-  server.get(`${prefix}/api/tags`, async () => {
+  server.get(`${prefix}/api/tags`, async (request: FastifyRequest) => {
     // 本地生成：讯飞上游 /v2/models 返回空数组，透传无意义
+    logStaticRequest(request, 'ollama', 'ollama tags');
     return convertTagsResponse();
   });
-  server.get(`${prefix}/api/version`, async () => {
+  server.get(`${prefix}/api/version`, async (request: FastifyRequest) => {
+    logStaticRequest(request, 'ollama', 'ollama version');
     return { version: '0.12.6' };
   });
-  server.post(`${prefix}/api/show`, async () => {
-    return {
-      modified_at: new Date().toISOString(),
-      details: {
-        parent_model: '',
-        format: 'gguf',
-        family: 'astron',
-        families: ['astron'],
-        parameter_size: '',
-        quantization_level: '',
-      },
-      capabilities: ['completion', 'tools'],
-      model_info: {
-        'general.architecture': 'astron',
-        'astron.context_length': 192000,
-        'general.parameter_count': 0,
-      },
-    };
+  server.post(`${prefix}/api/show`, async (request: FastifyRequest) => {
+    const body = request.body as Record<string, unknown> | undefined;
+    const modelId = resolveModelId(body?.model as string | undefined, request.log);
+    logStaticRequest(request, 'ollama', 'ollama show');
+    return buildShowResponse(modelId);
   });
 }
 
@@ -238,13 +251,19 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
   });
 
   // 本地生成模型列表：讯飞上游 /v2/models 返回空数组，透传无意义，改为本地生成
-  server.get('/v1/models', async () => buildModelsList());
+  server.get('/v1/models', async (request: FastifyRequest) => {
+    logStaticRequest(request, 'openai', 'openai models');
+    return buildModelsList();
+  });
   server.post('/v1/*', handleProxy);
   server.get('/v1/*', handleGetProxy);
 
   // Anthropic 协议路由：带 /anthropic 前缀（Base URL = http://localhost:3000/anthropic）
   // HEAD /anthropic：客户端启动时的连通性探测
-  server.head('/anthropic', async (_request, reply) => { reply.status(200).send(); });
+  server.head('/anthropic', async (request: FastifyRequest, reply: FastifyReply) => {
+    logStaticRequest(request, 'anthropic', 'anthropic ping', 'HEAD');
+    reply.status(200).send();
+  });
   server.post('/anthropic/v1/messages', handleAnthropicMessages);
   // count_tokens：上游不支持，本地按 1 token ≈ 4 字符估算
   server.post('/anthropic/v1/messages/count_tokens', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -260,14 +279,20 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
     request.log.info(`anthropic count_tokens | estimated=${inputTokens}`);
     reply.send({ input_tokens: inputTokens });
   });
-  server.get('/anthropic/v1/models', async () => buildModelsList());
+  server.get('/anthropic/v1/models', async (request: FastifyRequest) => {
+    logStaticRequest(request, 'anthropic', 'anthropic models');
+    return buildModelsList();
+  });
 
   // Ollama 协议路由：带 /ollama 前缀（Base URL = http://localhost:3000/ollama）
   server.post('/ollama/api/chat', handleOllamaChat);
   server.post('/ollama/api/generate', handleOllamaGenerate);
   // VS Code Continue.dev 等工具在 Ollama 模式下使用 OpenAI 兼容路径
   server.post('/ollama/v1/chat/completions', handleProxy);
-  server.get('/ollama/v1/models', async () => buildModelsList());
+  server.get('/ollama/v1/models', async (request: FastifyRequest) => {
+    logStaticRequest(request, 'ollama', 'ollama models');
+    return buildModelsList();
+  });
   registerOllamaStaticRoutes(server, '/ollama');
 
   // Ollama 协议路由：不带前缀（Base URL = http://localhost:3000，VSCode 等工具直接拼接 /api/tags）
@@ -275,7 +300,8 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
   server.post('/api/generate', handleOllamaGenerate);
   registerOllamaStaticRoutes(server, '');
 
-  server.get('/health', async () => {
+  server.get('/health', async (request: FastifyRequest) => {
+    logStaticRequest(request, 'openai', 'health check');
     return { status: 'ok', upstream: config.baseUrl };
   });
 

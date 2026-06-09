@@ -1,5 +1,32 @@
 import type { OllamaChatRequest, OllamaGenerateRequest, OllamaOptions } from './types';
 
+/** 支持思考深度选择的模型 ID 集合（xopdeepseekv4pro / xopdeepseekv4flash） */
+const THINKING_DEPTH_MODELS = new Set(['xopdeepseekv4pro', 'xopdeepseekv4flash']);
+
+/**
+ * 将 Ollama think 参数转换为讯飞上游的 thinking_level 参数
+ * - think: "high" / true → { thinking_level: "high" }
+ * - think: "max" → { thinking_level: "max" }
+ * - 其他值 → 不传 thinking_level（使用模型默认值）
+ * 仅当 model 在 THINKING_DEPTH_MODELS 中时才生效
+ */
+function mapThinkToThinkingLevel(
+  think: boolean | string | undefined,
+  model: string,
+): Record<string, unknown> {
+  if (think === undefined || think === false) return {};
+  if (!THINKING_DEPTH_MODELS.has(model)) return {};
+
+  if (think === true || think === 'high') {
+    return { thinking_level: 'high' };
+  }
+  if (think === 'max') {
+    return { thinking_level: 'max' };
+  }
+  // think 为其他字符串值（如 "low"）时，不传 thinking_level
+  return {};
+}
+
 /**
  * 将 Ollama format 字段映射为 OpenAI response_format
  * - format: "json" → { type: "json_object" }
@@ -44,6 +71,7 @@ export function convertChatRequest(ollama: OllamaChatRequest, model: string): Re
     model,
     messages: ollama.messages,
     ...liftOptions(ollama.options),
+    ...mapThinkToThinkingLevel(ollama.think, model),
   };
 
   if (ollama.stream !== undefined) result.stream = ollama.stream;
@@ -72,6 +100,7 @@ export function convertGenerateRequest(ollama: OllamaGenerateRequest, model: str
     model,
     messages,
     ...liftOptions(ollama.options),
+    ...mapThinkToThinkingLevel(ollama.think, model),
   };
 
   if (ollama.stream !== undefined) result.stream = ollama.stream;

@@ -54,12 +54,16 @@ export function LogStream({ entries, errorCount, maxVisible = 8, scrollOffset, t
       {hasMoreAbove && <Text dimColor>  ↑ ↑ ↑ {start} more above</Text>}
       {visible.map((entry, i) => {
         const tag = entry.success ? entry.method : 'ERR';
-        const head = `${entry.time} ${entry.requestId ?? '-'} ${tag} ${entry.path} - ${entry.model} | stream=${entry.stream ?? '?'}`;
+        // 非代码补全请求（如 GET /v1/models）：无 token 数据，省略 model/stream/token 信息
+        const isStaticRoute = !entry.pending && entry.success && entry.inputTokens === 0 && entry.outputTokens === 0;
+        const head = `${entry.time} ${entry.requestId ?? '-'} ${tag} ${entry.path}${isStaticRoute ? '' : ` - ${entry.model}`}`;
         const tail = entry.pending
-          ? `| ua=${entry.ua ?? 'unknown'} | processing... ${((Date.now() - entry.timestamp) / 1000).toFixed(1)}s`
-          : entry.success
-            ? `| ${(entry.latencyMs / 1000).toFixed(1)}s | in=${fmtTokens(entry.inputTokens)} out=${fmtTokens(entry.outputTokens)} total=${fmtTokens(entry.inputTokens + entry.outputTokens)} | ua=${entry.ua ?? 'unknown'}`
-            : `| ${entry.latencyMs}ms | ${entry.error ?? 'unknown error'} | ua=${entry.ua ?? 'unknown'}`;
+          ? `| stream=${entry.stream ?? '?'} | ua=${entry.ua ?? 'unknown'} | processing... ${((Date.now() - entry.timestamp) / 1000).toFixed(1)}s`
+          : isStaticRoute
+            ? `| ${(entry.latencyMs / 1000).toFixed(1)}s | ua=${entry.ua ?? 'unknown'}`
+            : entry.success
+              ? `| stream=${entry.stream ?? '?'} | ${(entry.latencyMs / 1000).toFixed(1)}s | in=${fmtTokens(entry.inputTokens)} out=${fmtTokens(entry.outputTokens)} total=${fmtTokens(entry.inputTokens + entry.outputTokens)} | ua=${entry.ua ?? 'unknown'}`
+              : `| ${entry.latencyMs}ms | ${entry.error ?? 'unknown error'} | ua=${entry.ua ?? 'unknown'}`;
         return <Text key={i} color={!entry.success ? 'red' : undefined}>{head} {tail}</Text>;
       })}
       {hasMoreBelow && <Text dimColor>  ↓ ↓ ↓ {filtered.length - start - maxVisible} more below</Text>}

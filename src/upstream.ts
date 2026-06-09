@@ -931,6 +931,11 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
           reqInfo.log.warn(
             `xfyun retryable error in stream (cannot retry, headers already sent) | ${errDetail}`,
           );
+          // 向客户端写入 Anthropic/OpenAI 格式的 SSE 错误事件，
+          // 否则客户端只看到流突然中断，报 "empty or malformed response"
+          const errorEvent = formatStreamErrorEvent(errDetail);
+          responseChunks?.push(errorEvent);
+          rawReply.write(errorEvent);
           break;
         }
 
@@ -941,6 +946,10 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
             reqInfo.log.warn(
               `upstream error in stream | ${streamError}`,
             );
+            // 同上：向客户端写入错误事件
+            const errorEvent = formatStreamErrorEvent(streamError);
+            responseChunks?.push(errorEvent);
+            rawReply.write(errorEvent);
             break;
           }
         }

@@ -1,6 +1,9 @@
 import { SUPPORTED_MODELS, DEFAULT_MODEL } from '../config';
 import type { OllamaEndpoint } from './types';
 
+/** 支持思考深度选择的模型 ID 集合（xopdeepseekv4pro / xopdeepseekv4flash） */
+const THINKING_DEPTH_MODELS = new Set(['xopdeepseekv4pro', 'xopdeepseekv4flash']);
+
 /**
  * 将 OpenAI 非流式 chat completion 响应转换为 Ollama /api/chat 响应
  * @param model 解析后的模型 ID
@@ -65,7 +68,9 @@ export function convertTagsResponse(): { models: Array<Record<string, unknown>> 
     },
   };
   const supportedModels = SUPPORTED_MODELS.map((m) => ({
-    name: m.id,
+    // name: VSCode 等工具在模型列表中显示的名字，用人类可读的展示名而非原始 ID
+    name: m.name,
+    // model: 实际用于 API 请求的模型 ID，保持与讯飞上游一致
     model: m.id,
     modified_at: new Date().toISOString(),
     size: 0,
@@ -187,4 +192,35 @@ export class SSEToNDJSONConverter {
     }
     return JSON.stringify({ ...base, response: '' });
   }
+}
+
+/**
+ * 构建 Ollama /api/show 响应
+ * 根据请求的 model 返回对应的元信息和能力声明（如思考深度选项）
+ */
+export function buildShowResponse(modelId: string): Record<string, unknown> {
+  const modelInfo = SUPPORTED_MODELS.find(m => m.id === modelId);
+  const contextLength = modelInfo?.contextLength ?? 192000;
+  const hasThinkingDepth = THINKING_DEPTH_MODELS.has(modelId);
+
+  return {
+    modified_at: new Date().toISOString(),
+    details: {
+      parent_model: '',
+      format: 'gguf',
+      family: 'astron',
+      families: ['astron'],
+      parameter_size: '',
+      quantization_level: '',
+    },
+    capabilities: ['completion', 'tools'],
+    model_info: {
+      'general.architecture': 'astron',
+      'astron.context_length': contextLength,
+      'general.parameter_count': 0,
+      ...(hasThinkingDepth ? {
+        'astron.thinking_levels': ['high', 'max'],
+      } : {}),
+    },
+  };
 }

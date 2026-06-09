@@ -10,6 +10,7 @@ describe('ANTHROPIC_SSE_EVENTS', () => {
     expect(ANTHROPIC_SSE_EVENTS.has('message_delta')).toBe(true);
     expect(ANTHROPIC_SSE_EVENTS.has('message_stop')).toBe(true);
     expect(ANTHROPIC_SSE_EVENTS.has('ping')).toBe(true);
+    expect(ANTHROPIC_SSE_EVENTS.has('error')).toBe(true);
   });
 
   it('does not contain OpenAI event types', () => {
@@ -21,7 +22,7 @@ describe('ANTHROPIC_SSE_EVENTS', () => {
     expect(ANTHROPIC_SSE_EVENTS.has('context_usage')).toBe(false);
   });
 
-  it('has exactly 7 event types', () => {
-    expect(ANTHROPIC_SSE_EVENTS.size).toBe(7);
+  it('has exactly 8 event types', () => {
+    expect(ANTHROPIC_SSE_EVENTS.size).toBe(8);
   });
 });

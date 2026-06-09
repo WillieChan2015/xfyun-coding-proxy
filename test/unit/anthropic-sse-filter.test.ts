@@ -80,4 +80,18 @@ describe('SSEFilter with Anthropic event whitelist', () => {
     const result = f.filter(input, mockLog);
     expect(result).toBe(input);
   });
+
+  it('passes through error events (needed for upstream error delivery)', () => {
+    const f = new SSEFilter(ANTHROPIC_SSE_EVENTS);
+    const input = 'event: error\ndata: {"type":"error","error":{"type":"api_error","message":"upstream error"}}\n\n';
+    const result = f.filter(input, mockLog);
+    expect(result).toBe(input);
+  });
+
+  it('passes through error event followed by content_block_delta', () => {
+    const f = new SSEFilter(ANTHROPIC_SSE_EVENTS);
+    const input = 'event: error\ndata: {"type":"error"}\n\nevent: content_block_delta\ndata: {"type":"content_block_delta"}\n\n';
+    const result = f.filter(input, mockLog);
+    expect(result).toBe(input);
+  });
 });

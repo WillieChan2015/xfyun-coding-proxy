@@ -44,6 +44,8 @@ export interface RequestCompleteEvent {
   path?: string;
   ua?: string;
   error?: string;
+  /** HTTP 方法，默认 'POST'（静态路由如 GET /v1/models 需要显式传入） */
+  method?: string;
 }
 
 /** 请求日志条目 */

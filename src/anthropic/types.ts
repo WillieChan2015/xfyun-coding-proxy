@@ -23,7 +23,12 @@ export interface AnthropicMessagesRequest {
   metadata?: { user_id?: string };
 }
 
-/** Anthropic SSE 标准事件类型白名单 */
+/** Anthropic SSE 标准事件类型白名单
+ * 包含 error：Anthropic 官方协议支持 event: error 事件，
+ * 且讯飞引擎在上下文超长、额度不足等场景通过 SSE error 返回错误。
+ * 不包含 error 会导致 SSEFilter 过滤掉错误事件，客户端收到空 SSE 流，
+ * 触发 "empty or malformed response (HTTP 200)" 错误。
+ */
 export const ANTHROPIC_SSE_EVENTS = new Set([
   'message_start',
   'content_block_start',
@@ -32,6 +37,7 @@ export const ANTHROPIC_SSE_EVENTS = new Set([
   'message_delta',
   'message_stop',
   'ping',
+  'error',
 ]);
 
 /** Anthropic 响应中的 token 用量 */

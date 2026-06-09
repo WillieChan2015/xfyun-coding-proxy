@@ -334,7 +334,7 @@ export function recordRequestComplete(event: RequestCompleteEvent): void {
   if (!updated) {
     const logEntry: RequestLogEntry = {
       timestamp: pendingTs ?? Date.now(),
-      method: 'POST',
+      method: event.method ?? 'POST',
       path: event.path ?? `/${event.protocol}`,
       protocol: event.protocol,
       model: event.model,

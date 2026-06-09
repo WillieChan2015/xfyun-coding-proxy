@@ -56,18 +56,21 @@ export function resolveModelId(
   requestedModel: string | undefined,
   log?: { warn: (msg: string) => void },
 ): string {
-  // 动态读取，确保 dotenv 加载后值正确
-  if (process.env.XFYUN_ALLOW_CUSTOM_MODEL !== 'true') {
-    return DEFAULT_MODEL;
+  // 白名单内的模型始终可用，无需额外开关
+  if (requestedModel && MODEL_MAP.has(requestedModel)) {
+    return requestedModel;
   }
+  // 未请求模型或请求默认模型，直接返回默认
   if (!requestedModel || requestedModel === DEFAULT_MODEL) {
     return DEFAULT_MODEL;
   }
-  if (MODEL_MAP.has(requestedModel)) {
-    return requestedModel;
+  // 非白名单模型：需显式开启 XFYUN_ALLOW_CUSTOM_MODEL 才允许透传
+  if (process.env.XFYUN_ALLOW_CUSTOM_MODEL !== 'true') {
+    log?.warn(`Unsupported model "${requestedModel}", fallback to ${DEFAULT_MODEL}`);
+    return DEFAULT_MODEL;
   }
-  log?.warn(`Unsupported model "${requestedModel}", fallback to ${DEFAULT_MODEL}`);
-  return DEFAULT_MODEL;
+  // 开关已开启，允许透传非白名单模型
+  return requestedModel;
 }
 
 export const configSchema = z.object({

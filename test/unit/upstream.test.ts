@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'bun:test';
 import { upstreamRequest, UpstreamOptions, UpstreamResult } from '../../src/upstream';
+import { ANTHROPIC_SSE_EVENTS } from '../../src/anthropic/types';
 import { Protocol, sessionStats, resetDailyStats } from '../../src/stats';
 import { config } from '../../src/config';
 
@@ -275,5 +276,50 @@ describe('upstreamRequest', () => {
     expect(result.errorType).toBe('stream_error');
     expect(result.status).toBe(200);
     expect(mockRawReplyHelper.ended).toBe(true);
+    // 修复后：讯飞错误时应向客户端写入 error SSE 事件，而非空响应
+    const fullResponse = mockRawReplyHelper.writtenChunks.join('');
+    expect(fullResponse).toContain('event: error');
+    expect(fullResponse).toContain('10012');
+  });
+
+  it('scenario 7: Anthropic SSE error event passes through to client', async () => {
+    // 模拟 Anthropic 协议下讯飞通过 event: error 返回错误（如上下文超长）
+    // 使用 ANTHROPIC_SSE_EVENTS（包含 error）确保 error 事件不被 SSEFilter 过滤
+    const sseData =
+      'event: error\n' +
+      'data: {"error":{"message":"context length exceeded","type":"api_error"},"type":"error"}\n\n';
+
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(sseData));
+        controller.close();
+      },
+    });
+
+    globalThis.fetch = mockFetch(() =>
+      Promise.resolve(
+        new Response(stream, {
+          status: 200,
+          statusText: 'OK',
+          headers: { 'Content-Type': 'text/event-stream' },
+        }),
+      ),
+    );
+
+    const mockRawReplyHelper = createMockRawReply();
+    const options = createBaseOptions({
+      isStream: true,
+      rawReply: mockRawReplyHelper.rawReply,
+      allowedSSEEvents: ANTHROPIC_SSE_EVENTS,
+    });
+    const result: UpstreamResult = await upstreamRequest(options);
+
+    // extractXfyunError 无法识别此格式，所以 success=true（无 streamError）
+    // 但关键：error 事件已通过 SSEFilter 透传给客户端
+    expect(result.success).toBe(true);
+    const fullResponse = mockRawReplyHelper.writtenChunks.join('');
+    expect(fullResponse).toContain('event: error');
+    expect(fullResponse).toContain('context length exceeded');
   });
 });

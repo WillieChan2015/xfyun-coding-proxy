@@ -23,20 +23,23 @@ describe('resolveModelId', () => {
     }
   });
 
-  it('开关关闭时，任何 model 都返回 DEFAULT_MODEL', () => {
-    expect(resolveModelId('xopdeepseekv4pro')).toBe(DEFAULT_MODEL);
-    expect(resolveModelId('some-random-model')).toBe(DEFAULT_MODEL);
+  it('开关关闭时，白名单内 model 正常透传', () => {
+    expect(resolveModelId('xopdeepseekv4pro')).toBe('xopdeepseekv4pro');
+    expect(resolveModelId('xsparkx2')).toBe('xsparkx2');
   });
 
-  it('开关开启 + 白名单内 model → 透传', () => {
-    process.env.XFYUN_ALLOW_CUSTOM_MODEL = 'true';
+  it('开关关闭时，白名单外 model 回退到 DEFAULT_MODEL', () => {
+    expect(resolveModelId('some-random-model')).toBe(DEFAULT_MODEL);
+    expect(resolveModelId('gpt-4')).toBe(DEFAULT_MODEL);
+  });
+
+  it('白名单内 model 无需开关即可透传', () => {
     expect(resolveModelId('xopdeepseekv4pro')).toBe('xopdeepseekv4pro');
     expect(resolveModelId('xsparkx2')).toBe('xsparkx2');
     expect(resolveModelId('xopglm5')).toBe('xopglm5');
   });
 
-  it('开关开启 + 白名单外 model → 回退 + warn 日志', () => {
-    process.env.XFYUN_ALLOW_CUSTOM_MODEL = 'true';
+  it('白名单外 model → 回退 + warn 日志（无论开关状态）', () => {
     const warnings: string[] = [];
     const mockLog = { warn: (msg: string) => warnings.push(msg) };
     const result = resolveModelId('gpt-4', mockLog);
@@ -64,12 +67,20 @@ describe('resolveModelId', () => {
     expect(resolveModelId(undefined)).toBe(DEFAULT_MODEL);
   });
 
-  it('dotenv 加载后开关生效（动态读取验证）', () => {
-    // 开关未设置时
-    expect(resolveModelId('xopdeepseekv4pro')).toBe(DEFAULT_MODEL);
-    // 设置环境变量后，不需要重新 import，函数内部动态读取
+  it('开关开启 + 白名单外 model → 透传', () => {
     process.env.XFYUN_ALLOW_CUSTOM_MODEL = 'true';
+    expect(resolveModelId('gpt-4')).toBe('gpt-4');
+    expect(resolveModelId('claude-3-opus')).toBe('claude-3-opus');
+  });
+
+  it('dotenv 加载后开关生效（动态读取验证）', () => {
+    // 白名单内模型始终可用
     expect(resolveModelId('xopdeepseekv4pro')).toBe('xopdeepseekv4pro');
+    // 白名单外模型：开关关闭时回退
+    expect(resolveModelId('gpt-4')).toBe(DEFAULT_MODEL);
+    // 设置环境变量后，白名单外模型透传
+    process.env.XFYUN_ALLOW_CUSTOM_MODEL = 'true';
+    expect(resolveModelId('gpt-4')).toBe('gpt-4');
   });
 });
 

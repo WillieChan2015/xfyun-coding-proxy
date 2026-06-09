@@ -29,6 +29,7 @@ export interface OllamaGenerateRequest {
   options?: OllamaOptions;
   keep_alive?: string | number;
   images?: string[];
+  think?: boolean | string;
 }
 
 /** Ollama options 参数包 */
