@@ -4,18 +4,18 @@
 
 [English](./docs/README.en.md)
 
-本地代理服务，将 OpenAI 协议格式的请求转发到讯飞星辰 Coding Plan API，供 OpenCode / Cursor / Trae 等编程工具使用。
+本地代理服务，将 OpenAI / Anthropic / Ollama 协议格式的请求转发到讯飞星辰 Coding Plan API，供 Claude Code / Cursor / OpenCode / VS Code Continue.dev 等编程工具使用。
 
-> **当前版本：** `0.0.7-beta.6`
+> **当前版本：** `0.0.8-beta.1`
 >
-> 当前项目处于 alpha 预览阶段，接口、配置和行为在首个稳定版本前仍可能发生调整。
+> 当前项目处于 beta 预览阶段，接口、配置和行为在首个稳定版本前仍可能发生调整。
 >
 > 版本变更记录见 [`CHANGELOG.md`](./CHANGELOG.md)。
 
 ## 工作原理
 
 ```
-OpenCode / Cursor / Trae / 其他工具
+OpenCode / Cursor / 其他工具
         ↓  http://localhost:3000/v1/chat/completions
    ┌─────────────────────────┐
    │   Fastify 代理服务       │
@@ -39,7 +39,7 @@ Claude Code / Cursor (Anthropic 模式)
    │   Fastify 代理服务       │
    │                         │
    │  1. API Key 注入        │
-   │  2. Model 覆盖          │
+   │  2. 模型透传（白名单+开关）│
    │  3. 转发到讯飞           │
    │  4. SSE 流式透传        │
    │  5. 429/503/529 自动重试│
@@ -59,8 +59,9 @@ Claude Code / Cursor (Anthropic 模式)
 - **日志持久化** — 请求日志写入本地文件按天轮转（保留 7 天），monitor 模式下日志仅写文件，`--no-monitor` 时同时输出到控制台
 - **会话摘要** — 退出时输出请求数、token 消耗、重试次数、错误数和运行时长
 - **每日统计** — 跨会话累计当天用量，持久化到本地文件，支持 CLI 查询历史
-- **Ollama 协议兼容** — 支持 `/ollama/api/chat`、`/ollama/api/generate`、`/ollama/api/tags`、`/ollama/api/version`、`/ollama/api/show` 路由，以及 VS Code Continue.dev 等工具使用的 `/ollama/v1/chat/completions`、`/ollama/v1/models` OpenAI 兼容路径；还支持不带前缀的 `/api/chat`、`/api/generate`、`/api/tags`、`/api/version`、`/api/show` 路由
+- **Ollama 协议兼容** — 支持 `/ollama/api/chat`、`/ollama/api/generate`、`/ollama/api/tags`、`/ollama/api/version`、`/ollama/api/show` 路由，以及 VS Code Continue.dev 等工具使用的 `/ollama/v1/chat/completions`、`/ollama/v1/models` OpenAI 兼容路径；也支持不带 `/ollama` 前缀的路径
 - **Anthropic 协议兼容** — `/anthropic/v1/messages` 路由，透传 Anthropic Messages API 请求到讯飞 Anthropic 兼容端点，支持 Claude Code / Cursor（Anthropic 模式）等客户端
+- **模型透传** — 白名单内的模型直接透传到讯飞上游；可通过 `XFYUN_ALLOW_CUSTOM_MODEL` 环境变量开启非白名单模型的透传
 - **一键配置客户端** — `maas-coding-proxy setup` 子命令交互式引导配置 Claude Code 等客户端使用本地代理，自动检测安装、预览变更、备份并写入配置
 - **实时监控面板** — 启动时自动显示 Ink TUI 面板（默认开启），展示请求速率、成功率、token 用量、并发/流式请求数、延迟统计和请求日志流；支持键盘交互：`q` 退出、`↑↓` 滚动、`←→` 翻页、`e` 切换错误日志、`r` 重置每日统计；可通过 `--no-monitor` 或 `MONITOR=false` 禁用
 
@@ -183,7 +184,7 @@ pnpm build        # 编译 TypeScript 到 dist/
 
 tag 推送后，GitHub Actions 自动安装依赖、提取 changelog、执行 `prepublishOnly` 校验、发布 npm、创建 GitHub Release。
 
-本地可先用 `pnpm release:auto:dry-run <version-or-bump>` 预演，不改动仓库状态。详细命令参见 `CHANGELOG.md` 或 `pnpm release:auto --help`。
+本地可先用 `pnpm release:auto:dry-run <version-or-bump>` 预演，不改动仓库状态。也可用 `pnpm release:prepare` 手动准备版本或 `pnpm release:dry-run` 预演。详细命令参见 `CHANGELOG.md` 或 `pnpm release:auto --help`。
 
 ## 配置
 
@@ -205,6 +206,8 @@ tag 推送后，GitHub Actions 自动安装依赖、提取 changelog、执行 `p
 | `UPSTREAM_FETCH_TIMEOUT_MS` | `300000`                                           | 上游 fetch 总超时（毫秒），包括连接建立 + 流式传输全过程 |
 | `VERBOSE`                  | `false`                                             | 启用调试日志（等同于 `--verbose`）                      |
 | `DEBUG_PROXY`              | —                                                   | 设为 `1` 启用调试日志（等同于 `--debug`）                |
+| `XFYUN_MID_CONVERSATION_SYSTEM` | `true`                                         | 自动将 messages 中的 `role: "system"` 提取到 `system` 字段，解决讯飞 API 不支持该格式的问题；设为 `false` 关闭 |
+| `XFYUN_ALLOW_CUSTOM_MODEL` | `false`                                             | 设为 `true` 允许透传白名单外的自定义模型 ID，否则非白名单模型回退为 `astron-code-latest` |
 
 ### CLI 参数
 
@@ -319,15 +322,15 @@ maas-coding-proxy stats -l
 
 Override OpenAI Base URL 设为 `http://localhost:3000/v1`。
 
-### Trae
+### 自定义 OpenAI 兼容 Provider
 
-在 Trae 中添加自定义 OpenAI 兼容 provider 时：
+在支持自定义 OpenAI 兼容 provider 的工具中：
 
 - 自定义 URL 设为 `http://localhost:3000/v1/chat/completions`；
 - API Key 可填写任意占位值，例如 `local-proxy`；
-- 如果 Trae 要求填写模型名，可保留任意占位值，代理在转发前会统一覆盖为 `astron-code-latest`。
+- 如果工具要求填写模型名，可填写 `astron-code-latest` 或任意白名单内的模型 ID。
 
-这个代理还额外处理了与 Trae 相关的兼容问题：
+这个代理还额外处理了与第三方工具相关的兼容问题：
 
 - 过滤 `progress_notice`、`context_usage` 等非标准 SSE 事件，避免流式解析报错；
 - 丢弃可能被讯飞上游拒绝的非标准请求头。
@@ -339,7 +342,7 @@ Override OpenAI Base URL 设为 `http://localhost:3000/v1`。
 - Ollama Base URL 设为 `http://localhost:3000/ollama`
 - 支持的端点：`POST /ollama/api/chat`、`POST /ollama/api/generate`、`GET /ollama/api/tags`、`GET /ollama/api/version`、`POST /ollama/api/show`、`POST /ollama/v1/chat/completions`、`GET /ollama/v1/models`
 - 也支持不带 `/ollama` 前缀的路径（`/api/chat`、`/api/generate` 等），适用于 Base URL 直接设为 `http://localhost:3000` 的客户端
-- 模型名会被统一覆盖为 `astron-code-latest`
+- 模型名通过白名单校验，白名单内的模型透传，非白名单模型回退为 `astron-code-latest`
 - 流式响应使用 NDJSON 格式（`application/x-ndjson`）
 
 Open WebUI 配置示例：将 Ollama API URL 设为 `http://localhost:3000/ollama`。
@@ -352,7 +355,7 @@ Continue.dev 配置示例见下方 VS Code 章节。
 
 - Base URL 设为 `http://localhost:3000/anthropic`
 - API Key 填写占位值（如 `local-proxy`），代理在转发时会自动替换为真实 Key
-- 模型名会被统一覆盖为 `astron-code-latest`
+- 可通过环境变量 `ANTHROPIC_MODEL` 或模型选择器指定模型（白名单内的模型直接透传，默认使用 `astron-code-latest`）
 
 > 也可以使用 `maas-coding-proxy setup` 命令自动完成上述配置。
 
@@ -391,7 +394,7 @@ models:
 
 - 代理默认仅监听 `127.0.0.1`，面向本地使用场景。
 - 源码仓库的本地开发脚本依赖 Bun，而编译后的 `dist/` 产物与发布包面向 Node.js `>=20`。
-- 客户端传入的模型名会在转发前统一覆盖为 `astron-code-latest`。
+- 客户端传入的模型名通过白名单校验：白名单内的模型直接透传，非白名单模型默认回退为 `astron-code-latest`；可通过 `XFYUN_ALLOW_CUSTOM_MODEL=true` 开启透传。
 - 类似 `"true"` 的字符串型 `stream` 参数会被规范化为布尔值 `true`。
 - 错误响应会尽量保持 OpenAI 风格的 `{ error: { message, type, code } }` 结构。
 - Ollama 的 `keep_alive`、`options.top_k`、`options.num_ctx` 等本地特有参数会被静默丢弃。
@@ -403,40 +406,49 @@ models:
 
 ```
 src/
-├── index.ts        # CLI 入口（bin）
-├── server.ts       # Fastify 服务器创建 + 启动 + 优雅关停
-├── proxy.ts        # 代理核心：转发 + 流式 + 重试 + SSE 过滤
-├── upstream.ts     # 共享上游请求层：fetchWithRetry、SSEFilter、safeSend、handleUpstreamResult
-├── errors.ts       # 错误格式化工具
-├── cli.ts          # CLI 参数解析（commander 子命令）
-├── config.ts       # 配置：CLI 参数 + 环境变量 + 配置发现链 + 校验
-├── util.ts         # token 用量提取 + 格式化
+├── index.ts              # CLI 入口（bin）
+├── server.ts             # Fastify 服务器创建 + 启动 + 优雅关停
+├── proxy.ts              # OpenAI 协议 handler（/v1/*）
+├── upstream.ts           # 共享上游请求层：fetchWithRetry、SSEFilter、safeSend、handleUpstreamResult
+├── errors.ts             # 错误格式化工具
+├── cli.ts                # CLI 参数解析（commander 子命令）
+├── config.ts             # 配置：CLI 参数 + 环境变量 + 配置发现链 + 校验
+├── util.ts               # token 用量提取 + 格式化
+├── debug-logger.ts       # 调试日志（NDJSON 格式写入 logs/debug/）
+├── update-check.ts       # npm 版本更新检查
 ├── types/
-│   └── openai.ts   # OpenAI 协议类型守卫
+│   └── openai.ts         # OpenAI 协议类型守卫
 ├── ollama/
-│   ├── types.ts    # Ollama 协议类型定义
-│   ├── request.ts  # Ollama → OpenAI 请求转换
-│   ├── response.ts # OpenAI → Ollama 响应转换（含 SSE→NDJSON）
-│   └── handler.ts  # Ollama 路由 handler
+│   ├── types.ts          # Ollama 协议类型定义
+│   ├── request.ts        # Ollama → OpenAI 请求转换
+│   ├── response.ts       # OpenAI → Ollama 响应转换（含 SSE→NDJSON）
+│   └── handler.ts        # Ollama 路由 handler
 ├── anthropic/
-│   ├── types.ts    # Anthropic 协议类型定义
-│   └── handler.ts  # Anthropic 路由 handler
+│   ├── types.ts          # Anthropic 协议类型定义
+│   ├── handler.ts        # Anthropic 路由 handler
+│   └── system-extract.ts # 中途 system 消息提取
 ├── setup/
-│   ├── types.ts        # 客户端类型定义与注册表
-│   ├── claude-code.ts  # Claude Code 配置逻辑
-│   └── restore-cmd.ts  # setup restore 子命令 handler
+│   ├── types.ts          # 客户端类型定义与注册表
+│   ├── claude-code.ts    # Claude Code 配置逻辑
+│   └── restore-cmd.ts    # setup restore 子命令 handler
+├── setup-cmd.ts          # setup 子命令 handler
 ├── monitor/
-│   ├── entry.ts    # Ink 监控面板入口
-│   ├── index.ts    # 面板组件
-│   └── types.d.ts  # 类型声明
-├── stats.ts            # 会话统计 + 退出摘要
-├── stats-store.ts      # 统计数据存储
-├── stats-persistence.ts # 统计持久化（读写 JSON）
-├── stats-display.ts    # 统计格式化输出
-├── stats-types.ts      # 统计类型定义
-├── stats-cmd.ts        # CLI stats 子命令处理
-├── setup-cmd.ts        # setup 子命令 handler
-└── update-check.ts     # npm 版本更新检查
+│   ├── entry.ts          # Ink 监控面板入口
+│   ├── app.tsx           # MonitorApp 主组件
+│   ├── header.tsx        # 顶部状态栏
+│   ├── token-panel.tsx   # Token 用量面板
+│   ├── request-panel.tsx # 请求状态面板
+│   ├── log-stream.tsx    # 请求日志流
+│   ├── footer.tsx        # 底部快捷键提示
+│   ├── index.ts          # 面板组件导出
+│   └── types.d.ts        # 类型声明
+├── stats.ts              # 会话统计 + 退出摘要
+├── stats-store.ts        # 统计数据存储
+├── stats-persistence.ts  # 统计持久化（读写 JSON）
+├── stats-display.ts      # 统计格式化输出
+├── stats-types.ts        # 统计类型定义
+├── stats-cmd.ts          # CLI stats 子命令处理
+└── pretty-roll-transport.cjs # pino 日志轮转 transport
 ```
 
 ## 健康检查

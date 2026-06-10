@@ -16,6 +16,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed / 修复
 
+## [0.0.8-beta.1] - 2026-06-10
+
+### Added / 新增
+
+- 新增模型透传机制：内置 15 个讯飞模型白名单（`SUPPORTED_MODELS`），匹配白名单的模型名直接透传到上游；未匹配默认回退为 `astron-code-latest`；非白名单模型可通过 `XFYUN_ALLOW_CUSTOM_MODEL=true` 开启透传。
+- Added model pass-through mechanism: built-in whitelist of 15 xfyun models (`SUPPORTED_MODELS`); matched model names pass through directly to upstream; unmatched models fall back to `astron-code-latest` by default; non-whitelist models can be enabled via `XFYUN_ALLOW_CUSTOM_MODEL=true`.
+- 新增 `resolveModelId()` 函数，统一 OpenAI / Anthropic / Ollama 三个协议的模型解析逻辑。
+- Added `resolveModelId()` function, unifying model resolution logic across OpenAI, Anthropic, and Ollama protocols.
+- `/v1/models`、`/anthropic/v1/models`、`/ollama/v1/models`、`/ollama/api/tags` 改为本地生成模型列表（含具体模型名称和上下文长度），不再透传上游空列表。
+- Changed `/v1/models`, `/anthropic/v1/models`, `/ollama/v1/models`, and `/ollama/api/tags` to generate model lists locally (with model names and context lengths) instead of forwarding empty upstream responses.
+
+### Changed / 变更
+
+- Anthropic SSE 事件白名单 `ANTHROPIC_SSE_EVENTS` 新增 `error` 事件类型，确保讯飞引擎在上下文超长、额度不足等场景通过 SSE error 返回的错误能正确传递给客户端，避免客户端收到空 SSE 流而报告 "empty or malformed response (HTTP 200)"。
+- Added `error` event type to `ANTHROPIC_SSE_EVENTS` whitelist, ensuring upstream SSE error events (context length exceeded, quota exhausted, etc.) are properly delivered to the client instead of being filtered out and causing "empty or malformed response (HTTP 200)" errors.
+- `SSEToNDJSONConverter` 构造函数新增 `model` 参数，Ollama 流式响应的 NDJSON 行中现在携带实际透传的模型名。
+- `SSEToNDJSONConverter` constructor now accepts a `model` parameter; Ollama NDJSON streaming response lines now carry the actual resolved model name.
+- `UpstreamOptions` 新增 `model` 字段，供统计系统记录实际透传的模型 ID；`stats-types.ts` 新增 `statsModel` 字段。
+- Added `model` field to `UpstreamOptions` for stats tracking of the resolved model ID; added `statsModel` field to `stats-types.ts`.
+- Ollama handler 的 `convertChatRequest` 和 `convertGenerateRequest` 新增 `model` 参数，不再硬编码 `DEFAULT_MODEL`。
+- `convertChatRequest` and `convertGenerateRequest` in Ollama handler now accept a `model` parameter instead of hardcoding `DEFAULT_MODEL`.
+- Ollama `convertTagsResponse` 改为本地生成（基于 `SUPPORTED_MODELS`），不再接收上游模型列表参数。
+- Changed `convertTagsResponse` to generate model list locally (from `SUPPORTED_MODELS`) instead of receiving upstream model list as input.
+- 移除已废弃的 `handleOllamaTags` 函数和 `logStreamOllamaRequest` 中未使用的 import。
+- Removed deprecated `handleOllamaTags` function and unused imports in `logStreamOllamaRequest`.
+
+### Fixed / 修复
+
+- 修复 `resolveModelId` 对 `undefined`、空字符串、默认模型名的短路处理：不再对合法请求打印虚假的 "unsupported model" 警告日志。
+- Fixed `resolveModelId` short-circuit for `undefined`, empty string, and default model name: no longer emits spurious "unsupported model" warning logs for valid requests.
+- Ollama handler 日志现在同时打印请求模型和解析后模型，便于排查模型透传行为。
+- Ollama handler logs now include both requested and resolved model names for easier debugging of pass-through behavior.
+- 修复 Ollama 流式错误事件格式：错误事件统一使用 `event: error` 格式，确保客户端能正确解析错误信息。
+- Fixed Ollama stream error event format: error events now consistently use `event: error` format for correct client-side parsing.
+
 ## [0.0.7-beta.6] - 2026-06-01
 
 ### Added / 新增
