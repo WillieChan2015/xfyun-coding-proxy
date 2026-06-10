@@ -16,6 +16,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed / 修复
 
+## [0.0.8-beta.2] - 2026-06-10
+
+### Added / 新增
+
+### Changed / 变更
+
+### Fixed / 修复
+
 - 修复静态/探测路由（`/v1/models`、`/api/version`、`/health` 等）被计入请求数统计的问题——`recordRequestComplete` 新增 `countable` 字段控制是否累加统计，`logStaticRequest` 传 `countable: false`，面板日志（LogStream）照常显示。
 - Fixed static/probe routes (`/v1/models`, `/api/version`, `/health`, etc.) incorrectly counted toward request stats — added `countable` field to `recordRequestComplete` to control stat accumulation; `logStaticRequest` passes `countable: false`; panel log stream display is preserved.
 
