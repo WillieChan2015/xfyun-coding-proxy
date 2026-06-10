@@ -45,7 +45,7 @@ function setTerminalTitle(title: string): void {
 
 /**
  * 记录静态路由请求的 pino 日志 + 面板日志
- * 静态路由不走 upstreamRequest，需手动调用以在 Ink 面板 LogStream 中显示
+ * 静态路由不走 upstreamRequest，不计入请求统计（countable: false），但需在面板 LogStream 中显示
  */
 function logStaticRequest(
   request: FastifyRequest,
@@ -62,6 +62,7 @@ function logStaticRequest(
       protocol, model: DEFAULT_MODEL, inputTokens: 0, outputTokens: 0,
       latencyMs: Date.now() - start, success: true, retries: 0,
       method, path: request.url, ua: request.headers['user-agent'] ?? 'unknown',
+      countable: false,
     });
   });
 }

@@ -253,53 +253,58 @@ export function recordRequestComplete(event: RequestCompleteEvent): void {
     rolloverFn();
   }
 
-  dailyStatsDirty = true;
   const { protocol, inputTokens, outputTokens, success, retries } = event;
+  // 静态/探测路由（如 GET /v1/models、/api/version）不计入请求统计
+  const countable = event.countable !== false;
 
   const errorCount = success ? 0 : 1;
 
-  // 集中更新 sessionStats
-  sessionStats.requestCount++;
-  sessionStats.totalPromptTokens += inputTokens;
-  sessionStats.totalCompletionTokens += outputTokens;
-  sessionStats.retries += retries;
-  sessionStats.errors += errorCount;
+  if (countable) {
+    dailyStatsDirty = true;
 
-  // 按 session 内的实际完成日归入 byDate（用于跨天分日明细）
-  const completionDate = today;
-  if (!sessionStats.byDate[completionDate]) {
-    sessionStats.byDate[completionDate] = {
-      requestCount: 0,
-      totalPromptTokens: 0,
-      totalCompletionTokens: 0,
-      retries: 0,
-      errors: 0,
+    // 集中更新 sessionStats
+    sessionStats.requestCount++;
+    sessionStats.totalPromptTokens += inputTokens;
+    sessionStats.totalCompletionTokens += outputTokens;
+    sessionStats.retries += retries;
+    sessionStats.errors += errorCount;
+
+    // 按 session 内的实际完成日归入 byDate（用于跨天分日明细）
+    const completionDate = today;
+    if (!sessionStats.byDate[completionDate]) {
+      sessionStats.byDate[completionDate] = {
+        requestCount: 0,
+        totalPromptTokens: 0,
+        totalCompletionTokens: 0,
+        retries: 0,
+        errors: 0,
+      };
+    }
+    const dayStats = sessionStats.byDate[completionDate];
+    dayStats.requestCount++;
+    dayStats.totalPromptTokens += inputTokens;
+    dayStats.totalCompletionTokens += outputTokens;
+    dayStats.retries += retries;
+    dayStats.errors += errorCount;
+
+    // 集中更新 dailyStats
+    dailyStats.requestCount++;
+    dailyStats.totalPromptTokens += inputTokens;
+    dailyStats.totalCompletionTokens += outputTokens;
+    dailyStats.retries += retries;
+    dailyStats.errors += errorCount;
+
+    // 集中更新协议统计
+    const protocolDelta = {
+      requestCount: 1,
+      totalPromptTokens: inputTokens,
+      totalCompletionTokens: outputTokens,
+      retries,
+      errors: errorCount,
     };
+    incrementProtocolStats(sessionStats, protocol, protocolDelta);
+    incrementProtocolStats(dailyStats, protocol, protocolDelta);
   }
-  const dayStats = sessionStats.byDate[completionDate];
-  dayStats.requestCount++;
-  dayStats.totalPromptTokens += inputTokens;
-  dayStats.totalCompletionTokens += outputTokens;
-  dayStats.retries += retries;
-  dayStats.errors += errorCount;
-
-  // 集中更新 dailyStats
-  dailyStats.requestCount++;
-  dailyStats.totalPromptTokens += inputTokens;
-  dailyStats.totalCompletionTokens += outputTokens;
-  dailyStats.retries += retries;
-  dailyStats.errors += errorCount;
-
-  // 集中更新协议统计
-  const protocolDelta = {
-    requestCount: 1,
-    totalPromptTokens: inputTokens,
-    totalCompletionTokens: outputTokens,
-    retries,
-    errors: errorCount,
-  };
-  incrementProtocolStats(sessionStats, protocol, protocolDelta);
-  incrementProtocolStats(dailyStats, protocol, protocolDelta);
 
   // 发射事件
   statsEmitter.emit('request:complete', event);

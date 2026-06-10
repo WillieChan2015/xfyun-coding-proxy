@@ -46,6 +46,8 @@ export interface RequestCompleteEvent {
   error?: string;
   /** HTTP 方法，默认 'POST'（静态路由如 GET /v1/models 需要显式传入） */
   method?: string;
+  /** 是否计入请求统计，默认 true。静态/探测路由传 false，只记录面板日志不增加计数 */
+  countable?: boolean;
 }
 
 /** 请求日志条目 */
