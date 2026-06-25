@@ -16,6 +16,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed / 修复
 
+## [0.0.8-beta.3] - 2026-06-25
+
+### Added / 新增
+
+- 新增 token 缓存命中（`cached_tokens`）的统计与展示：非流式从 `usage.prompt_tokens_details.cached_tokens` 提取，流式从 SSE chunk 正则匹配提取，`extractTokenUsage()` / `extractStreamUsage()` 均返回 `cachedTokens` 字段。
+- Added token cache hit (`cached_tokens`) tracking and display: extracted from `usage.prompt_tokens_details.cached_tokens` for non-streaming and via regex from SSE chunks for streaming; both `extractTokenUsage()` and `extractStreamUsage()` now return a `cachedTokens` field.
+- 统计数据模型（`SessionDayStats`、`ProtocolStats`、`DailyStats`、`RequestCompleteEvent`、`RequestLogEntry`）均新增 `totalCachedTokens` / `cachedTokens` 字段，`recordRequestComplete` 统一累加。
+- Stats data models (`SessionDayStats`, `ProtocolStats`, `DailyStats`, `RequestCompleteEvent`, `RequestLogEntry`) all gained `totalCachedTokens` / `cachedTokens` fields; `recordRequestComplete` accumulates them uniformly.
+- 监控面板 Token Usage 区域的 Input 行新增缓存命中展示（`Input: xxx (cached: yyy)`），日志流中每条请求行始终展示 `+yyy cached`。
+- Monitor panel Token Usage section now shows cache hits in the Input line (`Input: xxx (cached: yyy)`); log stream always displays `+yyy cached` per request.
+
+### Changed / 变更
+
+- CLI `stats` 子命令输出（`printDailyStats`、`printSessionSummary`）新增 `Cached:` 行，始终展示当日/会话的缓存 token 总量。
+- CLI `stats` subcommand output (`printDailyStats`, `printSessionSummary`) now includes a `Cached:` line, always showing daily/session cache token totals.
+- `formatStatsLine` 表格行新增 `+xxx cached` 后缀，始终展示缓存命中数。
+- `formatStatsLine` table rows now include a `+xxx cached` suffix, always showing cache hit counts.
+- 持久化层（`mergeDailyStats`、`mergeProtocolStats`、`loadDailyStats`）兼容旧版本不含 `totalCachedTokens` 的统计文件（自动补 0）。
+- Persistence layer (`mergeDailyStats`, `mergeProtocolStats`, `loadDailyStats`) backward-compatible with older stats files missing `totalCachedTokens` (auto-fills 0).
+
+### Fixed / 修复
+
+- `extractTokenUsage()` 对非正数的 `cached_tokens`（0 或负数）不再记录，与 `extractStreamUsage()` 行为一致。
+- `extractTokenUsage()` no longer records non-positive `cached_tokens` (0 or negative), consistent with `extractStreamUsage()`.
+
 ## [0.0.8-beta.2] - 2026-06-10
 
 ### Added / 新增
