@@ -189,10 +189,21 @@ function calcBackoff(delayMs: number, attempt: number): number {
  * 一个 rawChunk 可能包含多个 SSE 事件（中间事件 usage 为 0，最后事件为真实值），
  * 因此用全局匹配取最后一个非零结果。
  */
-export function extractStreamUsage(rawChunk: string): { promptTokens?: number; completionTokens?: number; totalTokens?: number } {
+export function extractStreamUsage(rawChunk: string): { promptTokens?: number; completionTokens?: number; totalTokens?: number; cachedTokens?: number } {
   // 快速判断：如果 chunk 不包含任何 usage 相关字段，跳过正则匹配
   if (!rawChunk.includes('"prompt_tokens"') && !rawChunk.includes('"tokens"')) {
     return {};
+  }
+
+  let cachedTokens: number | undefined;
+
+  // 提取 cached_tokens（在 prompt_tokens_details 对象中）
+  // 全局匹配取最后一个非零值，与 prompt_tokens/completion_tokens 提取一致
+  const cachedRegex = /"cached_tokens":\s*(\d+)/g;
+  let cachedMatch: RegExpExecArray | null;
+  while ((cachedMatch = cachedRegex.exec(rawChunk)) !== null) {
+    const ct = parseInt(cachedMatch[1], 10);
+    if (ct > 0) cachedTokens = ct;
   }
 
   // 标准格式：全局匹配所有 prompt_tokens+completion_tokens 对，取最后一个非零值
@@ -209,7 +220,7 @@ export function extractStreamUsage(rawChunk: string): { promptTokens?: number; c
     }
   }
   if (lastPt !== undefined) {
-    return { promptTokens: lastPt, completionTokens: lastCt };
+    return { promptTokens: lastPt, completionTokens: lastCt, cachedTokens };
   }
 
   // 讯飞 context_usage 格式：{"tokens":N} 作为独立 key（非 "total_tokens"）
@@ -222,7 +233,7 @@ export function extractStreamUsage(rawChunk: string): { promptTokens?: number; c
     }
   }
   if (lastTotal !== undefined) {
-    return { totalTokens: lastTotal };
+    return { totalTokens: lastTotal, cachedTokens };
   }
 
   return {};
@@ -564,8 +575,8 @@ export interface UpstreamOptions {
   /** 流式请求确认上游 2xx 后写入的响应头，由各 handler 传入协议特定的 Content-Type 等 */
   streamHeaders?: Record<string, string>;
   allowedSSEEvents?: Set<string>;
-  extractStreamUsage?: (rawChunk: string) => { inputTokens?: number; outputTokens?: number };
-  extractNonStreamUsage?: (body: Record<string, unknown>) => { promptTokens?: number; completionTokens?: number };
+  extractStreamUsage?: (rawChunk: string) => { inputTokens?: number; outputTokens?: number; cachedTokens?: number };
+  extractNonStreamUsage?: (body: Record<string, unknown>) => { promptTokens?: number; completionTokens?: number; cachedTokens?: number };
   cleanNonStreamBody?: (body: Record<string, unknown>) => Record<string, unknown>;
   cleanStreamChunk?: (chunk: string) => string;
   /** 流式输出转换：将过滤+清理后的 SSE 文本转换为最终写入客户端的格式（如 NDJSON） */
@@ -586,6 +597,7 @@ export interface UpstreamResult {
   error?: string;
   inputTokens: number;
   outputTokens: number;
+  cachedTokens: number;
   durationMs: number;
 }
 
@@ -683,6 +695,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       model,
       inputTokens: 0,
       outputTokens: 0,
+      cachedTokens: 0,
       latencyMs: durationMs,
       success: false,
       stream: isStream,
@@ -705,6 +718,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       error: errMsg,
       inputTokens: 0,
       outputTokens: 0,
+      cachedTokens: 0,
       durationMs,
     };
   }
@@ -735,6 +749,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       model,
       inputTokens: 0,
       outputTokens: 0,
+      cachedTokens: 0,
       latencyMs: durationMs,
       success: false,
       stream: isStream,
@@ -756,6 +771,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       error: `HTTP ${response.status}`,
       inputTokens: 0,
       outputTokens: 0,
+      cachedTokens: 0,
       durationMs,
     };
   }
@@ -772,6 +788,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       model,
       inputTokens: 0,
       outputTokens: 0,
+      cachedTokens: 0,
       latencyMs: durationMs,
       success: false,
       stream: isStream,
@@ -793,6 +810,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       error: `HTTP ${response.status} empty body`,
       inputTokens: 0,
       outputTokens: 0,
+      cachedTokens: 0,
       durationMs,
     };
   }
@@ -809,6 +827,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       model,
       inputTokens: 0,
       outputTokens: 0,
+      cachedTokens: 0,
       latencyMs: durationMs,
       success: false,
       stream: isStream,
@@ -831,6 +850,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       error: `HTTP ${response.status} no stream body`,
       inputTokens: 0,
       outputTokens: 0,
+      cachedTokens: 0,
       durationMs,
     };
   }
@@ -855,6 +875,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       model,
       inputTokens: 0,
       outputTokens: 0,
+      cachedTokens: 0,
       latencyMs: durationMs,
       success: false,
       stream: isStream,
@@ -877,6 +898,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       error: `HTTP ${response.status}${xfyunErr ? ` xfyun_code=${xfyunErr.code} msg=${xfyunErr.msg}` : ''}`,
       inputTokens: 0,
       outputTokens: 0,
+      cachedTokens: 0,
       durationMs,
     };
   }
@@ -897,6 +919,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
     const sseFilter = new SSEFilter(allowedSSEEvents);
     let inputTokens: number | undefined;
     let outputTokens: number | undefined;
+    let cachedTokens: number | undefined;
     let streamError: string | null = null;
     // debug 日志收集：仅在 debug 模式开启时分配数组
     const upstreamChunks: string[] | undefined = isDebugEnabled() ? [] : undefined;
@@ -962,6 +985,9 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
           if (usage.outputTokens !== undefined) {
             outputTokens = usage.outputTokens;
           }
+          if (usage.cachedTokens !== undefined) {
+            cachedTokens = usage.cachedTokens;
+          }
         }
       }
     } catch (err) {
@@ -1000,6 +1026,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
         model,
         inputTokens: inputTokens ?? 0,
         outputTokens: outputTokens ?? 0,
+        cachedTokens: cachedTokens ?? 0,
         latencyMs: durationMs,
         success: false,
         stream: isStream,
@@ -1020,13 +1047,14 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
         error: streamError,
         inputTokens: inputTokens ?? 0,
         outputTokens: outputTokens ?? 0,
+        cachedTokens: cachedTokens ?? 0,
         durationMs,
       };
     }
 
     const tokenInfo =
       inputTokens !== undefined
-        ? `in=${fmtTokens(inputTokens)} out=${fmtTokens(outputTokens ?? 0)} total=${fmtTokens(inputTokens + (outputTokens ?? 0))}`
+        ? `in=${fmtTokens(inputTokens)}(+${fmtTokens(cachedTokens ?? 0)} cached) out=${fmtTokens(outputTokens ?? 0)} total=${fmtTokens(inputTokens + (outputTokens ?? 0))}`
         : '';
     reqInfo.log.info(
       `stream completed | ${durationMs}ms | ${tokenInfo} | ua=${ua}`.replace(/ \| $/, ''),
@@ -1036,6 +1064,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       model,
       inputTokens: inputTokens ?? 0,
       outputTokens: outputTokens ?? 0,
+      cachedTokens: cachedTokens ?? 0,
       latencyMs: durationMs,
       success: true,
       stream: isStream,
@@ -1053,6 +1082,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       success: true,
       inputTokens: inputTokens ?? 0,
       outputTokens: outputTokens ?? 0,
+      cachedTokens: cachedTokens ?? 0,
       durationMs,
     };
   }
@@ -1069,6 +1099,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       model,
       inputTokens: 0,
       outputTokens: 0,
+      cachedTokens: 0,
       latencyMs: durationMs,
       success: false,
       stream: isStream,
@@ -1090,6 +1121,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       error: 'empty response body',
       inputTokens: 0,
       outputTokens: 0,
+      cachedTokens: 0,
       durationMs,
     };
   }
@@ -1108,6 +1140,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       model,
       inputTokens: 0,
       outputTokens: 0,
+      cachedTokens: 0,
       latencyMs: durationMs,
       success: false,
       stream: isStream,
@@ -1129,6 +1162,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       error: `HTTP ${response.status} invalid JSON body`,
       inputTokens: 0,
       outputTokens: 0,
+      cachedTokens: 0,
       durationMs,
     };
   }
@@ -1137,12 +1171,13 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
   const finalBody = cleanNonStreamBody ? cleanNonStreamBody(responseBody) : responseBody;
 
   // 提取 usage
-  let usageInfo: { promptTokens?: number; completionTokens?: number };
+  let usageInfo: { promptTokens?: number; completionTokens?: number; cachedTokens?: number };
   if (extractNonStreamUsageFn) {
     const anthropicUsage = extractNonStreamUsageFn(finalBody);
     usageInfo = {
       promptTokens: anthropicUsage.promptTokens,
       completionTokens: anthropicUsage.completionTokens,
+      cachedTokens: anthropicUsage.cachedTokens,
     };
   } else {
     usageInfo = extractTokenUsage(finalBody.usage as Record<string, unknown> || {});
@@ -1150,7 +1185,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
 
   const tokenInfo =
     usageInfo.promptTokens !== undefined
-      ? `in=${fmtTokens(usageInfo.promptTokens!)} out=${fmtTokens(usageInfo.completionTokens!)} total=${fmtTokens((usageInfo.promptTokens ?? 0) + (usageInfo.completionTokens ?? 0))}`
+      ? `in=${fmtTokens(usageInfo.promptTokens!)}(+${fmtTokens(usageInfo.cachedTokens ?? 0)} cached) out=${fmtTokens(usageInfo.completionTokens!)} total=${fmtTokens((usageInfo.promptTokens ?? 0) + (usageInfo.completionTokens ?? 0))}`
       : '';
   reqInfo.log.info(
     `request completed | ${durationMs}ms | ${tokenInfo} | ua=${ua}`.replace(/ \| $/, ''),
@@ -1168,6 +1203,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
     model,
     inputTokens: usageInfo.promptTokens ?? 0,
     outputTokens: usageInfo.completionTokens ?? 0,
+    cachedTokens: usageInfo.cachedTokens ?? 0,
     latencyMs: durationMs,
     success: response.ok,
     stream: isStream,
@@ -1186,6 +1222,7 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
     success: response.ok,
     inputTokens: usageInfo.promptTokens ?? 0,
     outputTokens: usageInfo.completionTokens ?? 0,
+    cachedTokens: usageInfo.cachedTokens ?? 0,
     durationMs,
   };
 }

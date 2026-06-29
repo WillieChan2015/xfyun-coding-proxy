@@ -33,6 +33,7 @@ export function printDailyStats(date: string, stats: DailyStats | null): void {
   console.log(`  Tokens:         ${fmtTokens(totalTokens)}`);
   console.log(`    Input:        ${fmtTokens(stats.totalPromptTokens)}`);
   console.log(`    Output:       ${fmtTokens(stats.totalCompletionTokens)}`);
+  console.log(`    Cached:       ${fmtTokens(stats.totalCachedTokens)}`);
   console.log(`  Retries:        ${stats.retries}`);
   console.log(`  Errors:         ${stats.errors}`);
   const protocolKeys = Object.keys(stats.protocols);
@@ -95,6 +96,7 @@ export function printSessionSummary(): void {
   console.log(`  Tokens:         ${fmtTokens(totalTokens)}`);
   console.log(`    Input:        ${fmtTokens(sessionStats.totalPromptTokens)}`);
   console.log(`    Output:       ${fmtTokens(sessionStats.totalCompletionTokens)}`);
+  console.log(`    Cached:       ${fmtTokens(sessionStats.totalCachedTokens)}`);
   console.log(`  Retries:        ${sessionStats.retries}`);
   console.log(`  Errors:         ${sessionStats.errors}`);
   console.log(`  Uptime:         ${fmtUptime(uptime)}`);
@@ -131,6 +133,7 @@ export function printSessionSummary(): void {
     console.log(`  Tokens:         ${fmtTokens(totalDailyTokens)}`);
     console.log(`    Input:        ${fmtTokens(dailyStats.totalPromptTokens)}`);
     console.log(`    Output:       ${fmtTokens(dailyStats.totalCompletionTokens)}`);
+    console.log(`    Cached:       ${fmtTokens(dailyStats.totalCachedTokens)}`);
     console.log(`  Retries:        ${dailyStats.retries}`);
     console.log(`  Errors:         ${dailyStats.errors}`);
     const todayProtocolKeys = Object.keys(dailyStats.protocols);

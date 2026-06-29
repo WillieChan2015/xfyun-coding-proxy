@@ -4,6 +4,7 @@ import {
   convertGenerateResponse,
   convertTagsResponse,
   convertErrorToOllama,
+  buildShowResponse,
   SSEToNDJSONConverter,
 } from '../../src/ollama/response';
 
@@ -76,8 +77,8 @@ describe('convertGenerateResponse', () => {
 describe('convertTagsResponse', () => {
   it('generates model list from SUPPORTED_MODELS', () => {
     const result = convertTagsResponse();
-    // 1 默认模型 + 15 具体模型 = 16
-    expect(result.models).toHaveLength(16);
+    // 1 默认模型 + 16 具体模型 = 17
+    expect(result.models).toHaveLength(17);
     // 首位是默认模型
     expect(result.models[0].name).toBe('astron-code-latest');
     expect(result.models[0].model).toBe('astron-code-latest');
@@ -90,6 +91,23 @@ describe('convertTagsResponse', () => {
     const firstSupported = result.models[1];
     expect(firstSupported.details.parameter_size).toBeTruthy();
     expect(Number(firstSupported.details.parameter_size)).toBeGreaterThan(0);
+  });
+
+  it('adds thinking_levels for models that support thinking depth', () => {
+    const result = convertTagsResponse();
+    // xopdeepseekv4pro 和 xopdeepseekv4flash 应包含 thinking_levels
+    const proModel = result.models.find(m => m.model === 'xopdeepseekv4pro');
+    const flashModel = result.models.find(m => m.model === 'xopdeepseekv4flash');
+    const nonThinkingModel = result.models.find(m => m.model === 'xsparkx2');
+
+    expect(proModel).toBeDefined();
+    expect(flashModel).toBeDefined();
+    expect(nonThinkingModel).toBeDefined();
+
+    expect(proModel!.details.thinking_levels).toEqual(['high', 'max']);
+    expect(flashModel!.details.thinking_levels).toEqual(['high', 'max']);
+    // 不支持思考深度的模型不应有此字段
+    expect(nonThinkingModel!.details).not.toHaveProperty('thinking_levels');
   });
 });
 
@@ -166,5 +184,31 @@ describe('SSEToNDJSONConverter', () => {
     const converter = new SSEToNDJSONConverter('chat', 'xopkimik26');
     const result = converter.convert('');
     expect(result).toHaveLength(0);
+  });
+});
+
+describe('buildShowResponse', () => {
+  it('includes thinking in capabilities for models that support thinking depth', () => {
+    const result = buildShowResponse('xopdeepseekv4pro');
+    expect(result.capabilities).toContain('completion');
+    expect(result.capabilities).toContain('tools');
+    expect(result.capabilities).toContain('thinking');
+  });
+
+  it('does not include thinking in capabilities for models without thinking depth', () => {
+    const result = buildShowResponse('xsparkx2');
+    expect(result.capabilities).toContain('completion');
+    expect(result.capabilities).toContain('tools');
+    expect(result.capabilities).not.toContain('thinking');
+  });
+
+  it('includes thinking_levels in model_info for thinking models', () => {
+    const result = buildShowResponse('xopdeepseekv4flash');
+    expect(result.model_info['astron.thinking_levels']).toEqual(['high', 'max']);
+  });
+
+  it('does not include thinking_levels in model_info for non-thinking models', () => {
+    const result = buildShowResponse('xsparkx2');
+    expect(result.model_info).not.toHaveProperty('astron.thinking_levels');
   });
 });

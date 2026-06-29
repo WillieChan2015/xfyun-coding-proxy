@@ -27,12 +27,13 @@ function mergeProtocolStats(
   const result: Record<string, ProtocolStats> = {};
   const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
   for (const key of keys) {
-    const pa = a[key] ?? { requestCount: 0, totalPromptTokens: 0, totalCompletionTokens: 0, retries: 0, errors: 0 };
-    const pb = b[key] ?? { requestCount: 0, totalPromptTokens: 0, totalCompletionTokens: 0, retries: 0, errors: 0 };
+    const pa = a[key] ?? { requestCount: 0, totalPromptTokens: 0, totalCompletionTokens: 0, totalCachedTokens: 0, retries: 0, errors: 0 };
+    const pb = b[key] ?? { requestCount: 0, totalPromptTokens: 0, totalCompletionTokens: 0, totalCachedTokens: 0, retries: 0, errors: 0 };
     result[key] = {
       requestCount: Math.max(pa.requestCount, pb.requestCount),
       totalPromptTokens: Math.max(pa.totalPromptTokens, pb.totalPromptTokens),
       totalCompletionTokens: Math.max(pa.totalCompletionTokens, pb.totalCompletionTokens),
+      totalCachedTokens: Math.max(pa.totalCachedTokens, pb.totalCachedTokens),
       retries: Math.max(pa.retries, pb.retries),
       errors: Math.max(pa.errors, pb.errors),
     };
@@ -47,6 +48,7 @@ export function mergeDailyStats(a: DailyStats, b: DailyStats): DailyStats {
     requestCount: Math.max(a.requestCount, b.requestCount),
     totalPromptTokens: Math.max(a.totalPromptTokens, b.totalPromptTokens),
     totalCompletionTokens: Math.max(a.totalCompletionTokens, b.totalCompletionTokens),
+    totalCachedTokens: Math.max(a.totalCachedTokens, b.totalCachedTokens),
     retries: Math.max(a.retries, b.retries),
     errors: Math.max(a.errors, b.errors),
     protocols: mergeProtocolStats(a.protocols, b.protocols),
@@ -69,8 +71,18 @@ export function loadDailyStats(logDir: string, date: string): DailyStats | null 
       typeof parsed.retries === 'number' &&
       typeof parsed.errors === 'number'
     ) {
+      // 向后兼容：旧版本 stats 文件可能不含 totalCachedTokens
+      if (typeof parsed.totalCachedTokens !== 'number') {
+        parsed.totalCachedTokens = 0;
+      }
       if (!parsed.protocols) {
         parsed.protocols = {};
+      }
+      // 向后兼容：旧版本协议统计可能不含 totalCachedTokens
+      for (const key of Object.keys(parsed.protocols)) {
+        if (typeof parsed.protocols[key].totalCachedTokens !== 'number') {
+          parsed.protocols[key].totalCachedTokens = 0;
+        }
       }
       return parsed as DailyStats;
     }
@@ -93,8 +105,18 @@ export async function loadDailyStatsAsync(logDir: string, date: string): Promise
       typeof parsed.retries === 'number' &&
       typeof parsed.errors === 'number'
     ) {
+      // 向后兼容：旧版本 stats 文件可能不含 totalCachedTokens
+      if (typeof parsed.totalCachedTokens !== 'number') {
+        parsed.totalCachedTokens = 0;
+      }
       if (!parsed.protocols) {
         parsed.protocols = {};
+      }
+      // 向后兼容：旧版本协议统计可能不含 totalCachedTokens
+      for (const key of Object.keys(parsed.protocols)) {
+        if (typeof parsed.protocols[key].totalCachedTokens !== 'number') {
+          parsed.protocols[key].totalCachedTokens = 0;
+        }
       }
       return parsed as DailyStats;
     }

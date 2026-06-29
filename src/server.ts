@@ -59,7 +59,7 @@ function logStaticRequest(
   // 避免在同步 handler 中 latencyMs ≈ 0 无参考价值
   queueMicrotask(() => {
     recordRequestComplete({
-      protocol, model: DEFAULT_MODEL, inputTokens: 0, outputTokens: 0,
+      protocol, model: DEFAULT_MODEL, inputTokens: 0, outputTokens: 0, cachedTokens: 0,
       latencyMs: Date.now() - start, success: true, retries: 0,
       method, path: request.url, ua: request.headers['user-agent'] ?? 'unknown',
       countable: false,
@@ -197,6 +197,7 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
         model: DEFAULT_MODEL,
         inputTokens: 0,
         outputTokens: 0,
+        cachedTokens: 0,
         latencyMs: 0,
         success: false,
         requestId: request.id,
@@ -217,6 +218,7 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
         model: DEFAULT_MODEL,
         inputTokens: 0,
         outputTokens: 0,
+        cachedTokens: 0,
         latencyMs: 0,
         success: false,
         requestId: request.id,

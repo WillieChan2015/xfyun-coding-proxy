@@ -14,12 +14,12 @@ import type { RequestCompleteEvent } from '../stats';
  */
 export interface StatsDeps {
   statsEmitter: NodeJS.EventEmitter;
-  sessionStats: { requestCount: number; errors: number; totalPromptTokens: number; totalCompletionTokens: number; protocols: Record<string, { totalPromptTokens: number; totalCompletionTokens: number }> };
-  dailyStats: { requestCount: number; errors: number; totalPromptTokens: number; totalCompletionTokens: number };
+  sessionStats: { requestCount: number; errors: number; totalPromptTokens: number; totalCompletionTokens: number; totalCachedTokens: number; protocols: Record<string, { totalPromptTokens: number; totalCompletionTokens: number }> };
+  dailyStats: { requestCount: number; errors: number; totalPromptTokens: number; totalCompletionTokens: number; totalCachedTokens: number };
   getActiveRequests: () => number;
   getStreamingRequests: () => number;
   getLatencyStats: () => { avg: number; p95: number };
-  getRequestLog: () => ReadonlyArray<{ timestamp: number; method: string; path: string; protocol: string; model: string; latencyMs: number; inputTokens: number; outputTokens: number; success: boolean; stream?: boolean; pending?: boolean; requestId?: string; ua?: string; error?: string }>;
+  getRequestLog: () => ReadonlyArray<{ timestamp: number; method: string; path: string; protocol: string; model: string; latencyMs: number; inputTokens: number; outputTokens: number; cachedTokens: number; success: boolean; stream?: boolean; pending?: boolean; requestId?: string; ua?: string; error?: string }>;
   resetDailyStats: () => void;
 }
 
@@ -28,7 +28,9 @@ interface MonitorState {
   successRate: number;
   tokenInput: number;
   tokenOutput: number;
+  tokenCached: number;
   todayTokenTotal: number;
+  todayCachedTotal: number;
   byProtocol: { name: string; tokens: number }[];
   active: number;
   streaming: number;
@@ -87,6 +89,7 @@ function toLogEntries(getRequestLog: StatsDeps['getRequestLog']): LogEntry[] {
     latencyMs: entry.latencyMs,
     inputTokens: entry.inputTokens,
     outputTokens: entry.outputTokens,
+    cachedTokens: entry.cachedTokens,
     success: entry.success,
     stream: entry.stream,
     pending: entry.pending,
@@ -113,7 +116,9 @@ export function MonitorApp({ name, version, onQuit, stats, monitorConfig }: AppP
     successRate: calcSuccessRate(sessionStats),
     tokenInput: sessionStats.totalPromptTokens,
     tokenOutput: sessionStats.totalCompletionTokens,
+    tokenCached: sessionStats.totalCachedTokens,
     todayTokenTotal: dailyStats.totalPromptTokens + dailyStats.totalCompletionTokens,
+    todayCachedTotal: dailyStats.totalCachedTokens,
     byProtocol: getProtocolUsage(sessionStats),
     active: getActiveRequests(),
     streaming: getStreamingRequests(),
@@ -153,7 +158,9 @@ export function MonitorApp({ name, version, onQuit, stats, monitorConfig }: AppP
       successRate: calcSuccessRate(sessionStats),
       tokenInput: sessionStats.totalPromptTokens,
       tokenOutput: sessionStats.totalCompletionTokens,
+      tokenCached: sessionStats.totalCachedTokens,
       todayTokenTotal: dailyStats.totalPromptTokens + dailyStats.totalCompletionTokens,
+      todayCachedTotal: dailyStats.totalCachedTokens,
       byProtocol: getProtocolUsage(sessionStats),
       active: getActiveRequests(),
       streaming: getStreamingRequests(),
@@ -243,7 +250,7 @@ export function MonitorApp({ name, version, onQuit, stats, monitorConfig }: AppP
       <Header name={name} version={version} requestsPerMin={state.requestsPerMin} successRate={state.successRate} port={monitorConfig.port} baseUrl={monitorConfig.baseUrl} anthropicBaseUrl={monitorConfig.anthropicBaseUrl} />
       <Box flexDirection="row">
         <Box width="50%">
-          <TokenPanel input={state.tokenInput} output={state.tokenOutput} todayTotal={state.todayTokenTotal} byProtocol={state.byProtocol} />
+          <TokenPanel input={state.tokenInput} output={state.tokenOutput} cached={state.tokenCached} todayTotal={state.todayTokenTotal} todayCached={state.todayCachedTotal} byProtocol={state.byProtocol} />
         </Box>
         <Box width="50%">
           <RequestPanel

@@ -1,14 +1,23 @@
 export function extractTokenUsage(body: Record<string, unknown>): {
   promptTokens?: number;
   completionTokens?: number;
+  cachedTokens?: number;
 } {
   const usage = body.usage as Record<string, unknown> | undefined;
   if (!usage) return {};
+
+  // 从 prompt_tokens_details.cached_tokens 提取缓存命中 token 数
+  let cachedTokens: number | undefined;
+  const promptDetails = usage.prompt_tokens_details as Record<string, unknown> | undefined;
+  if (promptDetails && typeof promptDetails.cached_tokens === 'number' && promptDetails.cached_tokens > 0) {
+    cachedTokens = promptDetails.cached_tokens;
+  }
 
   return {
     promptTokens: typeof usage.prompt_tokens === 'number' ? usage.prompt_tokens : undefined,
     completionTokens:
       typeof usage.completion_tokens === 'number' ? usage.completion_tokens : undefined,
+    cachedTokens,
   };
 }
 

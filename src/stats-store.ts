@@ -20,6 +20,7 @@ export const sessionStats = {
   requestCount: 0,
   totalPromptTokens: 0,
   totalCompletionTokens: 0,
+  totalCachedTokens: 0,
   retries: 0,
   errors: 0,
   startTime: Date.now(),
@@ -31,6 +32,7 @@ export function resetSessionStats(): void {
   sessionStats.requestCount = 0;
   sessionStats.totalPromptTokens = 0;
   sessionStats.totalCompletionTokens = 0;
+  sessionStats.totalCachedTokens = 0;
   sessionStats.retries = 0;
   sessionStats.errors = 0;
   sessionStats.startTime = Date.now();
@@ -45,6 +47,7 @@ export const dailyStats: DailyStats = {
   requestCount: 0,
   totalPromptTokens: 0,
   totalCompletionTokens: 0,
+  totalCachedTokens: 0,
   retries: 0,
   errors: 0,
   protocols: {},
@@ -66,6 +69,7 @@ export function resetDailyStatsFields(date: string): void {
   dailyStats.requestCount = 0;
   dailyStats.totalPromptTokens = 0;
   dailyStats.totalCompletionTokens = 0;
+  dailyStats.totalCachedTokens = 0;
   dailyStats.retries = 0;
   dailyStats.errors = 0;
   dailyStats.protocols = {};
@@ -121,6 +125,7 @@ export function incrementProtocolStats(
       requestCount: 0,
       totalPromptTokens: 0,
       totalCompletionTokens: 0,
+      totalCachedTokens: 0,
       retries: 0,
       errors: 0,
     };
@@ -129,6 +134,7 @@ export function incrementProtocolStats(
   if (delta.requestCount !== undefined) p.requestCount += delta.requestCount;
   if (delta.totalPromptTokens !== undefined) p.totalPromptTokens += delta.totalPromptTokens;
   if (delta.totalCompletionTokens !== undefined) p.totalCompletionTokens += delta.totalCompletionTokens;
+  if (delta.totalCachedTokens !== undefined) p.totalCachedTokens += delta.totalCachedTokens;
   if (delta.retries !== undefined) p.retries += delta.retries;
   if (delta.errors !== undefined) p.errors += delta.errors;
 }
@@ -253,7 +259,7 @@ export function recordRequestComplete(event: RequestCompleteEvent): void {
     rolloverFn();
   }
 
-  const { protocol, inputTokens, outputTokens, success, retries } = event;
+  const { protocol, inputTokens, outputTokens, cachedTokens, success, retries } = event;
   // 静态/探测路由（如 GET /v1/models、/api/version）不计入请求统计
   const countable = event.countable !== false;
 
@@ -266,6 +272,7 @@ export function recordRequestComplete(event: RequestCompleteEvent): void {
     sessionStats.requestCount++;
     sessionStats.totalPromptTokens += inputTokens;
     sessionStats.totalCompletionTokens += outputTokens;
+    sessionStats.totalCachedTokens += cachedTokens;
     sessionStats.retries += retries;
     sessionStats.errors += errorCount;
 
@@ -276,6 +283,7 @@ export function recordRequestComplete(event: RequestCompleteEvent): void {
         requestCount: 0,
         totalPromptTokens: 0,
         totalCompletionTokens: 0,
+        totalCachedTokens: 0,
         retries: 0,
         errors: 0,
       };
@@ -284,6 +292,7 @@ export function recordRequestComplete(event: RequestCompleteEvent): void {
     dayStats.requestCount++;
     dayStats.totalPromptTokens += inputTokens;
     dayStats.totalCompletionTokens += outputTokens;
+    dayStats.totalCachedTokens += cachedTokens;
     dayStats.retries += retries;
     dayStats.errors += errorCount;
 
@@ -291,6 +300,7 @@ export function recordRequestComplete(event: RequestCompleteEvent): void {
     dailyStats.requestCount++;
     dailyStats.totalPromptTokens += inputTokens;
     dailyStats.totalCompletionTokens += outputTokens;
+    dailyStats.totalCachedTokens += cachedTokens;
     dailyStats.retries += retries;
     dailyStats.errors += errorCount;
 
@@ -299,6 +309,7 @@ export function recordRequestComplete(event: RequestCompleteEvent): void {
       requestCount: 1,
       totalPromptTokens: inputTokens,
       totalCompletionTokens: outputTokens,
+      totalCachedTokens: cachedTokens,
       retries,
       errors: errorCount,
     };
@@ -327,6 +338,7 @@ export function recordRequestComplete(event: RequestCompleteEvent): void {
           latencyMs: event.latencyMs,
           inputTokens: event.inputTokens,
           outputTokens: event.outputTokens,
+          cachedTokens: event.cachedTokens,
           success: event.success,
           pending: false,
           ...(event.stream !== undefined ? { stream: event.stream } : {}),
@@ -346,6 +358,7 @@ export function recordRequestComplete(event: RequestCompleteEvent): void {
       latencyMs: event.latencyMs,
       inputTokens: event.inputTokens,
       outputTokens: event.outputTokens,
+      cachedTokens: event.cachedTokens,
       success: event.success,
       ...(event.stream !== undefined ? { stream: event.stream } : {}),
       ...(event.requestId ? { requestId: event.requestId } : {}),
@@ -370,6 +383,7 @@ export function recordRequestStart(protocol: Protocol, model: string, requestId?
     latencyMs: 0,
     inputTokens: 0,
     outputTokens: 0,
+    cachedTokens: 0,
     success: true,
     ...(stream !== undefined ? { stream } : {}),
     pending: true,
@@ -433,9 +447,10 @@ export function resetDailyStats(): void {
 
 export function formatStatsLine(
   label: string,
-  stats: { requestCount: number; totalPromptTokens: number; totalCompletionTokens: number; errors?: number },
+  stats: { requestCount: number; totalPromptTokens: number; totalCompletionTokens: number; totalCachedTokens?: number; errors?: number },
   labelWidth: number = 14,
 ): string {
   const errSuffix = (stats.errors ?? 0) > 0 ? `  ${stats.errors} err` : '';
-  return `    ${label.padEnd(labelWidth)}${String(stats.requestCount).padStart(5)} req  ${fmtTokens(stats.totalPromptTokens).padStart(10)} in  ${fmtTokens(stats.totalCompletionTokens).padStart(10)} out${errSuffix}`;
+  const cachedSuffix = `  +${fmtTokens(stats.totalCachedTokens ?? 0)} cached`;
+  return `    ${label.padEnd(labelWidth)}${String(stats.requestCount).padStart(5)} req  ${fmtTokens(stats.totalPromptTokens).padStart(10)} in  ${fmtTokens(stats.totalCompletionTokens).padStart(10)} out${cachedSuffix}${errSuffix}`;
 }

@@ -1,5 +1,5 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { config, resolveModelId } from '../config';
+import { config, resolveModelId, MODEL_MAP } from '../config';
 import { upstreamRequest, cleanXfyunFieldsObj, summarizeRequestDiagnostics, handleUpstreamResult } from '../upstream';
 import { formatAnthropicError } from '../errors';
 import { extractUpstreamHeaders } from '../util';
@@ -112,6 +112,11 @@ export async function handleAnthropicMessages(
   const model = resolveModelId(body?.model as string | undefined, request.log);
   if (body) {
     body.model = model;
+    // 为有默认思考深度的模型强制覆盖 thinking_level（无论用户是否传递）
+    const modelInfo = MODEL_MAP.get(model);
+    if (modelInfo?.defaultThinkingLevel) {
+      body.thinking_level = modelInfo.defaultThinkingLevel;
+    }
   }
 
   // Claude Code 2.1.156+ 启用 mid-conversation-system beta 后，

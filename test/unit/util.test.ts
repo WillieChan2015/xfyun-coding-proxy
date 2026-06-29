@@ -6,7 +6,53 @@ describe('extractTokenUsage', () => {
     const result = extractTokenUsage({
       usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
     });
-    expect(result).toEqual({ promptTokens: 10, completionTokens: 5 });
+    expect(result).toEqual({ promptTokens: 10, completionTokens: 5, cachedTokens: undefined });
+  });
+
+  it('extracts cached_tokens from prompt_tokens_details', () => {
+    const result = extractTokenUsage({
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 50,
+        total_tokens: 150,
+        prompt_tokens_details: { cached_tokens: 80 },
+        completion_tokens_details: { reasoning_tokens: 0 },
+      },
+    });
+    expect(result).toEqual({ promptTokens: 100, completionTokens: 50, cachedTokens: 80 });
+  });
+
+  it('handles cached_tokens as 0 (no cache hit)', () => {
+    const result = extractTokenUsage({
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 50,
+        total_tokens: 150,
+        prompt_tokens_details: { cached_tokens: 0 },
+      },
+    });
+    // cached_tokens: 0 等同于无缓存命中，不记录
+    expect(result).toEqual({ promptTokens: 100, completionTokens: 50, cachedTokens: undefined });
+  });
+
+  it('returns cachedTokens as undefined when prompt_tokens_details is missing', () => {
+    const result = extractTokenUsage({
+      usage: { prompt_tokens: 10, completion_tokens: 5 },
+    });
+    expect(result).toEqual({ promptTokens: 10, completionTokens: 5, cachedTokens: undefined });
+  });
+
+  it('ignores cached_tokens when value is 0 or negative', () => {
+    // 0: 无缓存命中
+    const r1 = extractTokenUsage({
+      usage: { prompt_tokens: 10, completion_tokens: 5, prompt_tokens_details: { cached_tokens: 0 } },
+    });
+    expect(r1.cachedTokens).toBeUndefined();
+    // 负数：异常数据，不应记录
+    const r2 = extractTokenUsage({
+      usage: { prompt_tokens: 10, completion_tokens: 5, prompt_tokens_details: { cached_tokens: -1 } },
+    });
+    expect(r2.cachedTokens).toBeUndefined();
   });
 
   it('returns empty object when usage is missing', () => {

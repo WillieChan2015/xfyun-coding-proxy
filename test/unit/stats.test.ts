@@ -76,6 +76,7 @@ describe('saveDailyStats / loadDailyStats', () => {
       requestCount: 42,
       totalPromptTokens: 15000,
       totalCompletionTokens: 8500,
+      totalCachedTokens: 0,
       retries: 3,
       errors: 1,
       protocols: {},
@@ -179,6 +180,7 @@ describe('incrementProtocolStats', () => {
       requestCount: 1,
       totalPromptTokens: 100,
       totalCompletionTokens: 0,
+      totalCachedTokens: 0,
       retries: 0,
       errors: 0,
     });

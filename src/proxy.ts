@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { formatOpenAIError } from './errors';
-import { config, resolveModelId } from './config';
+import { config, resolveModelId, MODEL_MAP } from './config';
 import { recordRequestComplete, requestStarted, requestFinished, Protocol } from './stats';
 import { readBodyWithLimit, extractUpstreamHeaders } from './util';
 import { isChatCompletionRequest } from './types/openai';
@@ -100,6 +100,11 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
   const model = resolveModelId(body?.model as string | undefined, request.log);
   if (body) {
     body.model = model;
+    // 为有默认思考深度的模型强制覆盖 thinking_level（无论用户是否传递）
+    const modelInfo = MODEL_MAP.get(model);
+    if (modelInfo?.defaultThinkingLevel) {
+      body.thinking_level = modelInfo.defaultThinkingLevel;
+    }
   }
 
   const ua = request.headers['user-agent'] ?? 'unknown';
@@ -148,10 +153,10 @@ export async function handleProxy(request: FastifyRequest, reply: FastifyReply):
     extractStreamUsage: (rawChunk: string) => {
       const usage = extractStreamUsage(rawChunk);
       if (usage.promptTokens !== undefined) {
-        return { inputTokens: usage.promptTokens, outputTokens: usage.completionTokens };
+        return { inputTokens: usage.promptTokens, outputTokens: usage.completionTokens, cachedTokens: usage.cachedTokens };
       }
       if (usage.totalTokens !== undefined) {
-        return { inputTokens: usage.totalTokens, outputTokens: 0 };
+        return { inputTokens: usage.totalTokens, outputTokens: 0, cachedTokens: usage.cachedTokens };
       }
       return {};
     },
@@ -227,6 +232,7 @@ export async function handleGetProxy(
       model: 'unknown',
       inputTokens: 0,
       outputTokens: 0,
+      cachedTokens: 0,
       latencyMs,
       success: true,
       stream: false,
@@ -248,6 +254,7 @@ export async function handleGetProxy(
       model: 'unknown',
       inputTokens: 0,
       outputTokens: 0,
+      cachedTokens: 0,
       latencyMs,
       success: false,
       stream: false,

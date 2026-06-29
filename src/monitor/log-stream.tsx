@@ -11,6 +11,7 @@ export interface LogEntry {
   latencyMs: number;
   inputTokens: number;
   outputTokens: number;
+  cachedTokens: number;
   success: boolean;
   stream?: boolean;
   pending?: boolean;
@@ -62,7 +63,7 @@ export function LogStream({ entries, errorCount, maxVisible = 8, scrollOffset, t
           : isStaticRoute
             ? `| ${(entry.latencyMs / 1000).toFixed(1)}s | ua=${entry.ua ?? 'unknown'}`
             : entry.success
-              ? `| stream=${entry.stream ?? '?'} | ${(entry.latencyMs / 1000).toFixed(1)}s | in=${fmtTokens(entry.inputTokens)} out=${fmtTokens(entry.outputTokens)} total=${fmtTokens(entry.inputTokens + entry.outputTokens)} | ua=${entry.ua ?? 'unknown'}`
+              ? `| stream=${entry.stream ?? '?'} | ${(entry.latencyMs / 1000).toFixed(1)}s | in=${fmtTokens(entry.inputTokens)}(+${fmtTokens(entry.cachedTokens)} cached) out=${fmtTokens(entry.outputTokens)} total=${fmtTokens(entry.inputTokens + entry.outputTokens)} | ua=${entry.ua ?? 'unknown'}`
               : `| ${entry.latencyMs}ms | ${entry.error ?? 'unknown error'} | ua=${entry.ua ?? 'unknown'}`;
         return <Text key={i} color={!entry.success ? 'red' : undefined}>{head} {tail}</Text>;
       })}

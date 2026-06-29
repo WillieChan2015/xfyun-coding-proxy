@@ -1,8 +1,8 @@
 import { SUPPORTED_MODELS, DEFAULT_MODEL } from '../config';
 import type { OllamaEndpoint } from './types';
 
-/** 支持思考深度选择的模型 ID 集合（xopdeepseekv4pro / xopdeepseekv4flash） */
-const THINKING_DEPTH_MODELS = new Set(['xopdeepseekv4pro', 'xopdeepseekv4flash']);
+/** 支持思考深度选择的模型 ID 集合（xopdeepseekv4pro / xopdeepseekv4flash / xopglm52） */
+const THINKING_DEPTH_MODELS = new Set(['xopdeepseekv4pro', 'xopdeepseekv4flash', 'xopglm52']);
 
 /**
  * 将 OpenAI 非流式 chat completion 响应转换为 Ollama /api/chat 响应
@@ -67,22 +67,27 @@ export function convertTagsResponse(): { models: Array<Record<string, unknown>> 
       quantization_level: '',
     },
   };
-  const supportedModels = SUPPORTED_MODELS.map((m) => ({
-    // name: VSCode 等工具在模型列表中显示的名字，用人类可读的展示名而非原始 ID
-    name: m.name,
-    // model: 实际用于 API 请求的模型 ID，保持与讯飞上游一致
-    model: m.id,
-    modified_at: new Date().toISOString(),
-    size: 0,
-    digest: '',
-    details: {
-      parent_model: '',
-      format: 'gguf',
-      family: 'astron',
-      parameter_size: String(m.contextLength),
-      quantization_level: '',
-    },
-  }));
+  const supportedModels = SUPPORTED_MODELS.map((m) => {
+    const hasThinkingDepth = THINKING_DEPTH_MODELS.has(m.id);
+    return {
+      // name: VSCode 等工具在模型列表中显示的名字，用人类可读的展示名而非原始 ID
+      name: m.name,
+      // model: 实际用于 API 请求的模型 ID，保持与讯飞上游一致
+      model: m.id,
+      modified_at: new Date().toISOString(),
+      size: 0,
+      digest: '',
+      details: {
+        parent_model: '',
+        format: 'gguf',
+        family: 'astron',
+        parameter_size: String(m.contextLength),
+        quantization_level: '',
+        // 声明支持思考深度选择的级别，供客户端（VSCode、Open WebUI 等）在模型列表中展示
+        ...(hasThinkingDepth ? { thinking_levels: ['high', 'max'] } : {}),
+      },
+    };
+  });
   return { models: [defaultModel, ...supportedModels] };
 }
 
@@ -213,7 +218,7 @@ export function buildShowResponse(modelId: string): Record<string, unknown> {
       parameter_size: '',
       quantization_level: '',
     },
-    capabilities: ['completion', 'tools'],
+    capabilities: ['completion', 'tools', ...(hasThinkingDepth ? ['thinking'] : [])],
     model_info: {
       'general.architecture': 'astron',
       'astron.context_length': contextLength,

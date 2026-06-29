@@ -17,16 +17,19 @@ export interface SupportedModel {
   name: string;
   /** 上下文长度，如 1_000_000 */
   contextLength: number;
+  /** 默认思考深度级别（如 "high"、"max"），不设置则无默认思考深度 */
+  defaultThinkingLevel?: 'high' | 'max';
 }
 
 /** 支持的讯飞模型列表（硬编码白名单），新增模型时同步更新此数组 */
 export const SUPPORTED_MODELS: SupportedModel[] = [
   { id: 'xsparkx2',         name: 'Spark X2',            contextLength: 128_000 },
   { id: 'xopglm5',          name: 'GLM-5',               contextLength: 200_000 },
-  { id: 'xopdeepseekv4pro', name: 'DeepSeek-V4-Pro',     contextLength: 1_000_000 },
-  { id: 'xopdeepseekv4flash', name: 'DeepSeek-V4-Flash', contextLength: 1_000_000 },
+  { id: 'xopdeepseekv4pro', name: 'DeepSeek-V4-Pro',     contextLength: 1_000_000, defaultThinkingLevel: 'max' },
+  { id: 'xopdeepseekv4flash', name: 'DeepSeek-V4-Flash', contextLength: 1_000_000, defaultThinkingLevel: 'max' },
   { id: 'xopkimik26',       name: 'Kimi-K2.6',           contextLength: 256_000 },
   { id: 'xopglm51',         name: 'GLM-5.1',             contextLength: 200_000 },
+  { id: 'xopglm52',         name: 'GLM-5.2',             contextLength: 500_000, defaultThinkingLevel: 'max' },
   { id: 'xminimaxm25',      name: 'MiniMax-M2.5',        contextLength: 128_000 },
   { id: 'xopkimik25',       name: 'Kimi-K2.5',           contextLength: 128_000 },
   { id: 'xopdeepseekv32',   name: 'DeepSeek-V3.2',       contextLength: 128_000 },

@@ -118,10 +118,10 @@ async function handleOllamaProxy(
     extractStreamUsage: (rawChunk: string) => {
       const usage = extractStreamUsage(rawChunk);
       if (usage.promptTokens !== undefined) {
-        return { inputTokens: usage.promptTokens, outputTokens: usage.completionTokens };
+        return { inputTokens: usage.promptTokens, outputTokens: usage.completionTokens, cachedTokens: usage.cachedTokens };
       }
       if (usage.totalTokens !== undefined) {
-        return { inputTokens: usage.totalTokens, outputTokens: 0 };
+        return { inputTokens: usage.totalTokens, outputTokens: 0, cachedTokens: usage.cachedTokens };
       }
       return {};
     },

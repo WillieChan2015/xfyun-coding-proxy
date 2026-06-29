@@ -3,6 +3,7 @@ export interface SessionDayStats {
   requestCount: number;
   totalPromptTokens: number;
   totalCompletionTokens: number;
+  totalCachedTokens: number;
   retries: number;
   errors: number;
 }
@@ -12,6 +13,7 @@ export interface ProtocolStats {
   requestCount: number;
   totalPromptTokens: number;
   totalCompletionTokens: number;
+  totalCachedTokens: number;
   retries: number;
   errors: number;
 }
@@ -22,6 +24,7 @@ export interface DailyStats {
   requestCount: number;
   totalPromptTokens: number;
   totalCompletionTokens: number;
+  totalCachedTokens: number;
   retries: number;
   errors: number;
   protocols: Record<string, ProtocolStats>;
@@ -36,6 +39,7 @@ export interface RequestCompleteEvent {
   model: string;
   inputTokens: number;
   outputTokens: number;
+  cachedTokens: number;
   latencyMs: number;
   success: boolean;
   retries: number;
@@ -60,6 +64,7 @@ export interface RequestLogEntry {
   latencyMs: number;
   inputTokens: number;
   outputTokens: number;
+  cachedTokens: number;
   success: boolean;
   stream?: boolean;
   pending?: boolean;
