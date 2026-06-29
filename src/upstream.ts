@@ -23,25 +23,15 @@ export const RETRYABLE_XFYUN_CODES = new Set([10012, 10010, 11210]);
 
 /**
  * 检测响应体是否包含讯飞可重试错误码
- * 讯飞的错误格式为 {"code": 10012, "msg": "..."}，可能出现在 HTTP 200 的响应中
- * 优先使用 JSON parse 确保准确性，失败时 fallback 到字符串匹配
+ * 讯飞的错误格式多样：{"code":10012}、{"error":{"code":"10010"}}、
+ * 或业务码藏在 message 文本 "code: NNNN" 中。复用 extractXfyunError 统一提取，避免漏匹配
  */
 export function isRetryableXfyunError(responseBody: string): boolean {
-  // 先尝试 JSON parse
-  try {
-    const parsed = JSON.parse(responseBody);
-    if (typeof parsed.code === 'number' && RETRYABLE_XFYUN_CODES.has(parsed.code)) {
-      return true;
-    }
-  } catch {
-    // JSON parse 失败，fallback 到字符串匹配
-    for (const code of RETRYABLE_XFYUN_CODES) {
-      if (responseBody.includes(`"code":${code}`) || responseBody.includes(`"code": ${code}`)) {
-        return true;
-      }
-    }
-  }
-  return false;
+  const err = extractXfyunError(responseBody);
+  if (err?.code === undefined) return false;
+  // code 可能为字符串（如 "10010"）或数字，统一转数字后判断
+  const codeNum = typeof err.code === 'number' ? err.code : parseInt(err.code, 10);
+  return Number.isNaN(codeNum) ? false : RETRYABLE_XFYUN_CODES.has(codeNum);
 }
 
 /**
@@ -77,8 +67,15 @@ export function extractXfyunError(body: string): { code?: string | number; msg?:
     const error = parsed.error as Record<string, unknown> | undefined;
     if (error) {
       const msg = (error.message ?? parsed.error_msg) as string | undefined;
+      // error 内可能无 code 字段（讯飞 oneapi 把业务码塞进 message 文本 "code: NNNN, msg: ..."），
+      // 此时从 message 文本正则提取首个数字业务码，避免日志显示 code=undefined
+      let code = (error.code ?? parsed.error_code) as string | number | undefined;
+      if (code === undefined && msg) {
+        const codeInMsg = msg.match(/code:\s*(\d+)/);
+        if (codeInMsg) code = parseInt(codeInMsg[1], 10);
+      }
       return {
-        code: (error.code ?? parsed.error_code) as string | number | undefined,
+        code,
         msg,
         sid: extractSidFromMsg(msg) ?? extractSidFromBody(body),
       };

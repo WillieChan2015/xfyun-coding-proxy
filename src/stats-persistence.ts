@@ -19,8 +19,8 @@ export function isValidDate(date: string): boolean {
 
 // ---- 合并函数 ----
 
-/** 合并两组协议统计，各字段取较大值（防止多进程/外部恢复时覆写丢失数据） */
-function mergeProtocolStats(
+/** 合并两组协议/模型统计，各字段取较大值（防止多进程/外部恢复时覆写丢失数据） */
+export function mergeProtocolStats(
   a: Record<string, ProtocolStats>,
   b: Record<string, ProtocolStats>,
 ): Record<string, ProtocolStats> {
@@ -52,6 +52,7 @@ export function mergeDailyStats(a: DailyStats, b: DailyStats): DailyStats {
     retries: Math.max(a.retries, b.retries),
     errors: Math.max(a.errors, b.errors),
     protocols: mergeProtocolStats(a.protocols, b.protocols),
+    models: mergeProtocolStats(a.models ?? {}, b.models ?? {}),
   };
 }
 
@@ -77,6 +78,10 @@ export function loadDailyStats(logDir: string, date: string): DailyStats | null 
       }
       if (!parsed.protocols) {
         parsed.protocols = {};
+      }
+      // 向后兼容：旧版本 stats 文件可能不含 models
+      if (!parsed.models) {
+        parsed.models = {};
       }
       // 向后兼容：旧版本协议统计可能不含 totalCachedTokens
       for (const key of Object.keys(parsed.protocols)) {
@@ -111,6 +116,10 @@ export async function loadDailyStatsAsync(logDir: string, date: string): Promise
       }
       if (!parsed.protocols) {
         parsed.protocols = {};
+      }
+      // 向后兼容：旧版本 stats 文件可能不含 models
+      if (!parsed.models) {
+        parsed.models = {};
       }
       // 向后兼容：旧版本协议统计可能不含 totalCachedTokens
       for (const key of Object.keys(parsed.protocols)) {

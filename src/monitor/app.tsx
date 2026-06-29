@@ -14,7 +14,7 @@ import type { RequestCompleteEvent } from '../stats';
  */
 export interface StatsDeps {
   statsEmitter: NodeJS.EventEmitter;
-  sessionStats: { requestCount: number; errors: number; totalPromptTokens: number; totalCompletionTokens: number; totalCachedTokens: number; protocols: Record<string, { totalPromptTokens: number; totalCompletionTokens: number }> };
+  sessionStats: { requestCount: number; errors: number; totalPromptTokens: number; totalCompletionTokens: number; totalCachedTokens: number; protocols: Record<string, { totalPromptTokens: number; totalCompletionTokens: number }>; models: Record<string, { totalPromptTokens: number; totalCompletionTokens: number }> };
   dailyStats: { requestCount: number; errors: number; totalPromptTokens: number; totalCompletionTokens: number; totalCachedTokens: number };
   getActiveRequests: () => number;
   getStreamingRequests: () => number;
@@ -32,6 +32,7 @@ interface MonitorState {
   todayTokenTotal: number;
   todayCachedTotal: number;
   byProtocol: { name: string; tokens: number }[];
+  byModel: { name: string; tokens: number }[];
   active: number;
   streaming: number;
   totalToday: number;
@@ -66,6 +67,14 @@ function getProtocolUsage(ss: StatsDeps['sessionStats']): { name: string; tokens
   return Object.entries(ss.protocols).map(([name, p]) => ({
     name,
     tokens: p.totalPromptTokens + p.totalCompletionTokens,
+  }));
+}
+
+/** 从 sessionStats.models 构建 byModel 数组 */
+function getModelUsage(ss: StatsDeps['sessionStats']): { name: string; tokens: number }[] {
+  return Object.entries(ss.models).map(([name, m]) => ({
+    name,
+    tokens: m.totalPromptTokens + m.totalCompletionTokens,
   }));
 }
 
@@ -120,6 +129,7 @@ export function MonitorApp({ name, version, onQuit, stats, monitorConfig }: AppP
     todayTokenTotal: dailyStats.totalPromptTokens + dailyStats.totalCompletionTokens,
     todayCachedTotal: dailyStats.totalCachedTokens,
     byProtocol: getProtocolUsage(sessionStats),
+    byModel: getModelUsage(sessionStats),
     active: getActiveRequests(),
     streaming: getStreamingRequests(),
     totalToday: dailyStats.requestCount,
@@ -162,6 +172,7 @@ export function MonitorApp({ name, version, onQuit, stats, monitorConfig }: AppP
       todayTokenTotal: dailyStats.totalPromptTokens + dailyStats.totalCompletionTokens,
       todayCachedTotal: dailyStats.totalCachedTokens,
       byProtocol: getProtocolUsage(sessionStats),
+      byModel: getModelUsage(sessionStats),
       active: getActiveRequests(),
       streaming: getStreamingRequests(),
       totalToday: dailyStats.requestCount,
@@ -250,7 +261,7 @@ export function MonitorApp({ name, version, onQuit, stats, monitorConfig }: AppP
       <Header name={name} version={version} requestsPerMin={state.requestsPerMin} successRate={state.successRate} port={monitorConfig.port} baseUrl={monitorConfig.baseUrl} anthropicBaseUrl={monitorConfig.anthropicBaseUrl} />
       <Box flexDirection="row">
         <Box width="50%">
-          <TokenPanel input={state.tokenInput} output={state.tokenOutput} cached={state.tokenCached} todayTotal={state.todayTokenTotal} todayCached={state.todayCachedTotal} byProtocol={state.byProtocol} />
+          <TokenPanel input={state.tokenInput} output={state.tokenOutput} cached={state.tokenCached} todayTotal={state.todayTokenTotal} todayCached={state.todayCachedTotal} byProtocol={state.byProtocol} byModel={state.byModel} />
         </Box>
         <Box width="50%">
           <RequestPanel

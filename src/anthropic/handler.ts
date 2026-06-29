@@ -49,26 +49,37 @@ function safeParseAnthropicError(errorBody: string, fallbackStatus: number): { s
  */
 function extractAnthropicUsage(
   body: Record<string, unknown>,
-): { promptTokens?: number; completionTokens?: number } {
+): { promptTokens?: number; completionTokens?: number; cachedTokens?: number } {
   const usage = body.usage as AnthropicUsage | undefined;
   if (!usage) return {};
+  // Anthropic 的缓存命中字段为 cache_read_input_tokens（非 OpenAI 的 prompt_tokens_details.cached_tokens）
+  // 仅在 >0 时记录，0 等同于无缓存命中
+  const cachedTokens =
+    typeof usage.cache_read_input_tokens === 'number' && usage.cache_read_input_tokens > 0
+      ? usage.cache_read_input_tokens
+      : undefined;
   if (usage.input_tokens > 0 || usage.output_tokens > 0) {
     return {
       promptTokens: usage.input_tokens,
       completionTokens: usage.output_tokens,
+      cachedTokens,
     };
   }
   return {};
 }
 
+// 导出供单元测试验证缓存提取逻辑
+export { extractAnthropicUsage, extractAnthropicStreamUsage };
+
 /**
  * 从 Anthropic SSE 流中提取 token 用量
  * 在 message_delta 事件中: {"type":"message_delta","usage":{"output_tokens":N}}
  * 在 message_start 事件中: {"type":"message_start","message":{"usage":{"input_tokens":N,"output_tokens":1}}}
+ * 缓存命中字段 cache_read_input_tokens 出现在 message_start 的 usage 中
  */
 function extractAnthropicStreamUsage(
   rawChunk: string,
-): { inputTokens?: number; outputTokens?: number } {
+): { inputTokens?: number; outputTokens?: number; cachedTokens?: number } {
   // message_start 中的 input_tokens
   const inputMatch = rawChunk.match(/"input_tokens"\s*:\s*(\d+)/);
   // message_delta 中的 output_tokens（取最后一个非零值，因为是增量的）
@@ -76,11 +87,20 @@ function extractAnthropicStreamUsage(
   const lastOutput = outputMatches.length > 0
     ? parseInt(outputMatches[outputMatches.length - 1][1], 10)
     : undefined;
+  // cache_read_input_tokens 取最后一个非零值（与 OpenAI cached_tokens 提取策略一致）
+  const cachedMatches = [...rawChunk.matchAll(/"cache_read_input_tokens"\s*:\s*(\d+)/g)];
+  let cachedTokens: number | undefined;
+  for (const m of cachedMatches) {
+    const ct = parseInt(m[1], 10);
+    if (ct > 0) cachedTokens = ct;
+  }
 
-  if (inputMatch || lastOutput !== undefined) {
+  // 有任意 usage 字段即返回（cache_read_input_tokens 可能单独出现）
+  if (inputMatch || lastOutput !== undefined || cachedTokens !== undefined) {
     return {
       inputTokens: inputMatch ? parseInt(inputMatch[1], 10) : undefined,
       outputTokens: lastOutput,
+      cachedTokens,
     };
   }
   return {};

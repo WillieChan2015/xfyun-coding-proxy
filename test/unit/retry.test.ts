@@ -38,6 +38,24 @@ describe('isRetryableXfyunError', () => {
   it('returns false for empty string', () => {
     expect(isRetryableXfyunError('')).toBe(false);
   });
+
+  // 真实场景：讯飞非流式 500 错误，error.code 为字符串 "10010"（非数字）
+  it('detects string code "10010" in error.code', () => {
+    expect(
+      isRetryableXfyunError(
+        '{"error":{"message":"...code: 10010, msg: RecvFromEngineError","type":"one_api_error","code":"10010"}}',
+      ),
+    ).toBe(true);
+  });
+
+  // 真实场景：讯飞流式错误，error 内无 code 字段，业务码在 message 文本 "code: 10010"
+  it('detects code in message text when error.code absent', () => {
+    expect(
+      isRetryableXfyunError(
+        'event: error\ndata: {"error":{"message":"...code: 10010, msg: RecvFromEngineError","type":"api_error"}}\n\n',
+      ),
+    ).toBe(true);
+  });
 });
 
 describe('extractXfyunError', () => {
@@ -74,6 +92,24 @@ describe('extractXfyunError', () => {
     const result = extractXfyunError(body);
     expect(result?.code).toBe('ModelArts.81001');
     expect(result?.msg).toBe('model not found');
+  });
+
+  // 真实场景：讯飞流式错误 error 内无 code 字段，业务码藏在 message 文本 "code: NNNN" 中
+  // 见 logs/debug 中 event: error + data: {"error":{"message":"...code: 10010, msg: ...","type":"api_error"}}
+  it('格式2 error 无 code 字段时，从 message 文本提取 code: NNNN', () => {
+    const body =
+      'event: error\n' +
+      'data: {"error":{"message":"Xunfei claude request failed with Sid: cht000d340b@dx19f127847f6b893752 code: 10012, msg: EngineInternalError:1105|{\\"Code\\":1105,\\"Message\\":\\"busy\\"}","type":"api_error"}}\n\n';
+    const result = extractXfyunError(body);
+    expect(result?.code).toBe(10012);
+    expect(result?.sid).toBe('cht000d340b@dx19f127847f6b893752');
+  });
+
+  it('格式2 error 无 code 字段且 message 无 code 文本时，code 保持 undefined', () => {
+    const body = '{"error":{"message":"some opaque error","type":"api_error"}}';
+    const result = extractXfyunError(body);
+    expect(result?.code).toBeUndefined();
+    expect(result?.msg).toBe('some opaque error');
   });
 });
 

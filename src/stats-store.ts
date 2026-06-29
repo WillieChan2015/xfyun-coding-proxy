@@ -25,6 +25,7 @@ export const sessionStats = {
   errors: 0,
   startTime: Date.now(),
   protocols: {} as Record<string, ProtocolStats>,
+  models: {} as Record<string, ProtocolStats>,
   byDate: {} as Record<string, SessionDayStats>,
 };
 
@@ -37,6 +38,7 @@ export function resetSessionStats(): void {
   sessionStats.errors = 0;
   sessionStats.startTime = Date.now();
   sessionStats.protocols = {};
+  sessionStats.models = {};
   sessionStats.byDate = {};
 }
 
@@ -51,6 +53,7 @@ export const dailyStats: DailyStats = {
   retries: 0,
   errors: 0,
   protocols: {},
+  models: {},
 };
 
 // 脏标记：dailyStats 被修改后置 true，避免启动后无请求退出时将加载的数据原样覆写（或加载失败时用全零覆盖已有数据）
@@ -73,6 +76,7 @@ export function resetDailyStatsFields(date: string): void {
   dailyStats.retries = 0;
   dailyStats.errors = 0;
   dailyStats.protocols = {};
+  dailyStats.models = {};
 }
 
 // ---- 日期工具函数 ----
@@ -137,6 +141,34 @@ export function incrementProtocolStats(
   if (delta.totalCachedTokens !== undefined) p.totalCachedTokens += delta.totalCachedTokens;
   if (delta.retries !== undefined) p.retries += delta.retries;
   if (delta.errors !== undefined) p.errors += delta.errors;
+}
+
+/**
+ * 按 model ID 累加统计，与 incrementProtocolStats 同构
+ * key 为 resolveModelId 解析后的讯飞模型 ID
+ */
+export function incrementModelStats(
+  stats: { models: Record<string, ProtocolStats> },
+  model: string,
+  delta: Partial<ProtocolStats>,
+): void {
+  if (!stats.models[model]) {
+    stats.models[model] = {
+      requestCount: 0,
+      totalPromptTokens: 0,
+      totalCompletionTokens: 0,
+      totalCachedTokens: 0,
+      retries: 0,
+      errors: 0,
+    };
+  }
+  const m = stats.models[model];
+  if (delta.requestCount !== undefined) m.requestCount += delta.requestCount;
+  if (delta.totalPromptTokens !== undefined) m.totalPromptTokens += delta.totalPromptTokens;
+  if (delta.totalCompletionTokens !== undefined) m.totalCompletionTokens += delta.totalCompletionTokens;
+  if (delta.totalCachedTokens !== undefined) m.totalCachedTokens += delta.totalCachedTokens;
+  if (delta.retries !== undefined) m.retries += delta.retries;
+  if (delta.errors !== undefined) m.errors += delta.errors;
 }
 
 // ---- 并发追踪 ----
@@ -315,6 +347,9 @@ export function recordRequestComplete(event: RequestCompleteEvent): void {
     };
     incrementProtocolStats(sessionStats, protocol, protocolDelta);
     incrementProtocolStats(dailyStats, protocol, protocolDelta);
+    // 集中更新模型统计（key 为 resolveModelId 解析后的模型 ID，供面板 By Model 与审计读取）
+    incrementModelStats(sessionStats, event.model, protocolDelta);
+    incrementModelStats(dailyStats, event.model, protocolDelta);
   }
 
   // 发射事件

@@ -18,7 +18,7 @@ export function RequestPanel({ active, streaming, totalToday, todayErrors, total
       <Text>  Active:    {active}</Text>
       <Text>  Streaming: {streaming}</Text>
       <Text>  Session:   {totalSession}  <Text color={sessionErrors > 0 ? 'yellow' : undefined}>Err: {sessionErrors}</Text></Text>
-      <Text>  Today:     {totalToday}  <Text color={todayErrors > 0 ? 'yellow' : undefined}>Err: {todayErrors}</Text></Text>
+      <Text>  Today:     {totalToday}  <Text color={todayErrors > 0 ? 'yellow' : undefined}>Err: {todayErrors} ({totalToday > 0 ? ((todayErrors / totalToday) * 100).toFixed(1) : '0.0'}%)</Text></Text>
       <Box flexDirection="column" marginTop={1}>
         <Text>  Avg Latency: {(avgLatencyMs / 1000).toFixed(1)}s</Text>
         <Text>  P95 Latency: {(p95LatencyMs / 1000).toFixed(1)}s</Text>

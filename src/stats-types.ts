@@ -28,6 +28,8 @@ export interface DailyStats {
   retries: number;
   errors: number;
   protocols: Record<string, ProtocolStats>;
+  /** 按解析后模型 ID 聚合的每日统计，供审计读取 */
+  models: Record<string, ProtocolStats>;
 }
 
 /** 协议类型 */

@@ -17,6 +17,12 @@ function fmtUptime(ms: number): string {
   return `${days}d ${hr % 24}h ${min % 60}m`;
 }
 
+/** 计算错误率百分比：errors / requestCount * 100，requestCount=0 时返回 0 */
+function errorRate(errors: number, requestCount: number): string {
+  if (requestCount <= 0) return '0.0';
+  return ((errors / requestCount) * 100).toFixed(1);
+}
+
 // ---- 显示函数 ----
 
 export function printDailyStats(date: string, stats: DailyStats | null): void {
@@ -35,7 +41,7 @@ export function printDailyStats(date: string, stats: DailyStats | null): void {
   console.log(`    Output:       ${fmtTokens(stats.totalCompletionTokens)}`);
   console.log(`    Cached:       ${fmtTokens(stats.totalCachedTokens)}`);
   console.log(`  Retries:        ${stats.retries}`);
-  console.log(`  Errors:         ${stats.errors}`);
+  console.log(`  Errors:         ${stats.errors} (${errorRate(stats.errors, stats.requestCount)}%)`);
   const protocolKeys = Object.keys(stats.protocols);
   if (protocolKeys.length > 0) {
     console.log('──────────────────────────────────────────────────');
@@ -98,7 +104,7 @@ export function printSessionSummary(): void {
   console.log(`    Output:       ${fmtTokens(sessionStats.totalCompletionTokens)}`);
   console.log(`    Cached:       ${fmtTokens(sessionStats.totalCachedTokens)}`);
   console.log(`  Retries:        ${sessionStats.retries}`);
-  console.log(`  Errors:         ${sessionStats.errors}`);
+  console.log(`  Errors:         ${sessionStats.errors} (${errorRate(sessionStats.errors, sessionStats.requestCount)}%)`);
   console.log(`  Uptime:         ${fmtUptime(uptime)}`);
 
   // By Day 分日明细（跨天时展示每日贡献）
@@ -123,6 +129,17 @@ export function printSessionSummary(): void {
     }
   }
 
+  const sessionModelKeys = Object.keys(sessionStats.models);
+  if (sessionModelKeys.length > 0) {
+    console.log('──────────────────────────────────────────────────');
+    console.log('  By Model:');
+    const sorted = sessionModelKeys.sort((a, b) => sessionStats.models[b].requestCount - sessionStats.models[a].requestCount);
+    for (const name of sorted) {
+      const m = sessionStats.models[name];
+      console.log(formatStatsLine(name, m));
+    }
+  }
+
   // Today 部分：仅单日运行且有实际数据时展示；
   // 跨天时 By Day 已包含今天的明细，Today 的 cumulative 语义（含历史实例数据）容易混淆，故隐藏
   if (byDateKeys.length <= 1 && dailyStats.date && dailyStats.requestCount > 0) {
@@ -135,7 +152,7 @@ export function printSessionSummary(): void {
     console.log(`    Output:       ${fmtTokens(dailyStats.totalCompletionTokens)}`);
     console.log(`    Cached:       ${fmtTokens(dailyStats.totalCachedTokens)}`);
     console.log(`  Retries:        ${dailyStats.retries}`);
-    console.log(`  Errors:         ${dailyStats.errors}`);
+    console.log(`  Errors:         ${dailyStats.errors} (${errorRate(dailyStats.errors, dailyStats.requestCount)}%)`);
     const todayProtocolKeys = Object.keys(dailyStats.protocols);
     if (todayProtocolKeys.length > 0) {
       console.log('    By Protocol:');

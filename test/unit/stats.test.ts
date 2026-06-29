@@ -15,6 +15,8 @@ import {
   listStatsDates,
   isValidDate,
   incrementProtocolStats,
+  incrementModelStats,
+  resetDailyStatsFields,
   printDailyStats,
   printStatsHistory,
   printSessionSummary,
@@ -23,6 +25,7 @@ import {
   setSaveFn,
   resetSessionStats,
   resetDailyStats,
+  mergeDailyStats,
 } from '../../src/stats';
 
 const TMP_DIR = join(import.meta.dir, '..', 'tmp-stats-test');
@@ -80,6 +83,7 @@ describe('saveDailyStats / loadDailyStats', () => {
       retries: 3,
       errors: 1,
       protocols: {},
+      models: {},
     };
     saveDailyStats(TMP_DIR, stats);
     const loaded = loadDailyStats(TMP_DIR, '2025-05-06');
@@ -93,9 +97,11 @@ describe('saveDailyStats / loadDailyStats', () => {
       requestCount: 1,
       totalPromptTokens: 0,
       totalCompletionTokens: 0,
+      totalCachedTokens: 0,
       retries: 0,
       errors: 0,
       protocols: {},
+      models: {},
     };
     saveDailyStats(nestedDir, stats);
     expect(existsSync(join(nestedDir, 'stats', '2025-05-06.json'))).toBe(true);
@@ -128,9 +134,11 @@ describe('initDailyStats', () => {
       requestCount: 10,
       totalPromptTokens: 5000,
       totalCompletionTokens: 3000,
+      totalCachedTokens: 0,
       retries: 1,
       errors: 0,
       protocols: {},
+      models: {},
     };
     saveDailyStats(TMP_DIR, stats);
     initDailyStats(TMP_DIR);
@@ -207,6 +215,40 @@ describe('incrementProtocolStats', () => {
   });
 });
 
+describe('incrementModelStats', () => {
+  it('initializes and increments a new model', () => {
+    const stats = { models: {} as Record<string, ProtocolStats> };
+    incrementModelStats(stats, 'xopglm52', { requestCount: 1, totalPromptTokens: 100 });
+    expect(stats.models.xopglm52).toEqual({
+      requestCount: 1,
+      totalPromptTokens: 100,
+      totalCompletionTokens: 0,
+      totalCachedTokens: 0,
+      retries: 0,
+      errors: 0,
+    });
+  });
+
+  it('accumulates into existing model', () => {
+    const stats = {
+      models: {
+        xopglm52: { requestCount: 5, totalPromptTokens: 500, totalCompletionTokens: 200, totalCachedTokens: 0, retries: 0, errors: 1 },
+      } as Record<string, ProtocolStats>,
+    };
+    incrementModelStats(stats, 'xopglm52', { requestCount: 1, totalCompletionTokens: 50 });
+    expect(stats.models.xopglm52.requestCount).toBe(6);
+    expect(stats.models.xopglm52.totalCompletionTokens).toBe(250);
+  });
+
+  it('handles multiple models independently', () => {
+    const stats = { models: {} as Record<string, ProtocolStats> };
+    incrementModelStats(stats, 'xopglm52', { requestCount: 1 });
+    incrementModelStats(stats, 'astron-code-latest', { requestCount: 2 });
+    expect(stats.models.xopglm52.requestCount).toBe(1);
+    expect(stats.models['astron-code-latest'].requestCount).toBe(2);
+  });
+});
+
 describe('protocols field initialization', () => {
   it('sessionStats has empty protocols', () => {
     expect(sessionStats.protocols).toEqual({});
@@ -272,6 +314,7 @@ describe('printDailyStats with protocols', () => {
         openai: { requestCount: 20, totalPromptTokens: 12000, totalCompletionTokens: 1797, retries: 0, errors: 0 },
         ollama: { requestCount: 3, totalPromptTokens: 1500, totalCompletionTokens: 1500, retries: 0, errors: 0 },
       },
+      models: {},
     };
     const output = captureOutput(() => printDailyStats('2026-05-11', stats));
     expect(output).toContain('By Protocol:');
@@ -286,9 +329,11 @@ describe('printDailyStats with protocols', () => {
       requestCount: 50,
       totalPromptTokens: 5000,
       totalCompletionTokens: 0,
+      totalCachedTokens: 0,
       retries: 0,
       errors: 0,
       protocols: {},
+      models: {},
     };
     const output = captureOutput(() => printDailyStats('2026-05-09', stats));
     expect(output).not.toContain('By Protocol:');
@@ -310,6 +355,7 @@ describe('printStatsHistory with protocols', () => {
         anthropic: { requestCount: 280, totalPromptTokens: 12650000, totalCompletionTokens: 70000, retries: 1, errors: 2 },
         openai: { requestCount: 20, totalPromptTokens: 12000, totalCompletionTokens: 1797, retries: 0, errors: 0 },
       },
+      models: {},
     };
     writeFileSync(join(dir, '2026-05-11.json'), JSON.stringify(stats), 'utf-8');
     const output = captureOutput(() => printStatsHistory(join(TMP_DIR, 'history-proto')));
@@ -326,9 +372,11 @@ describe('printStatsHistory with protocols', () => {
       requestCount: 50,
       totalPromptTokens: 5000,
       totalCompletionTokens: 0,
+      totalCachedTokens: 0,
       retries: 0,
       errors: 0,
       protocols: {},
+      models: {},
     };
     writeFileSync(join(dir, '2026-05-09.json'), JSON.stringify(stats), 'utf-8');
     const output = captureOutput(() => printStatsHistory(join(TMP_DIR, 'history-noproto')));
@@ -345,6 +393,7 @@ describe('printSessionSummary with protocols', () => {
     dailyStats.retries = 0;
     dailyStats.errors = 0;
     dailyStats.protocols = {};
+    dailyStats.models = {};
   });
 
   it('includes By Protocol in session section', () => {
@@ -456,6 +505,7 @@ describe('setRolloverFn / cross-day rollover guard', () => {
     dailyStats.retries = 0;
     dailyStats.errors = 0;
     dailyStats.protocols = {};
+    dailyStats.models = {};
   });
 
   it('calls rolloverFn when dailyStats.date differs from today', () => {
@@ -563,6 +613,7 @@ describe('printSessionSummary Today section with zero requests', () => {
     dailyStats.retries = 0;
     dailyStats.errors = 0;
     dailyStats.protocols = {};
+    dailyStats.models = {};
   });
 
   it('hides Today section when dailyStats.requestCount is 0', () => {
@@ -594,6 +645,7 @@ describe('resetDailyStats with saveFn', () => {
     dailyStats.retries = 0;
     dailyStats.errors = 0;
     dailyStats.protocols = {};
+    dailyStats.models = {};
   });
 
   it('calls saveFn before resetting when dailyStatsDirty is true', () => {
@@ -643,5 +695,143 @@ describe('resetDailyStats with saveFn', () => {
     dailyStats.requestCount = 5;
     // dirty 状态无法直接控制，但 saveFn=null 时不会调用
     expect(() => resetDailyStats()).not.toThrow();
+  });
+});
+
+describe('mergeDailyStats models', () => {
+  it('merges models from both sides taking max per field', () => {
+    const a: DailyStats = {
+      date: '2026-06-29', requestCount: 10, totalPromptTokens: 1000, totalCompletionTokens: 500,
+      totalCachedTokens: 0, retries: 0, errors: 0, protocols: {},
+      models: { xopglm52: { requestCount: 5, totalPromptTokens: 500, totalCompletionTokens: 200, totalCachedTokens: 0, retries: 0, errors: 0 } },
+    };
+    const b: DailyStats = {
+      date: '2026-06-29', requestCount: 12, totalPromptTokens: 1200, totalCompletionTokens: 400,
+      totalCachedTokens: 0, retries: 0, errors: 0, protocols: {},
+      models: { xopglm52: { requestCount: 8, totalPromptTokens: 600, totalCompletionTokens: 100, totalCachedTokens: 0, retries: 0, errors: 0 } },
+    };
+    const merged = mergeDailyStats(a, b);
+    expect(merged.models.xopglm52.requestCount).toBe(8);
+    expect(merged.models.xopglm52.totalPromptTokens).toBe(600);
+    expect(merged.models.xopglm52.totalCompletionTokens).toBe(200);
+  });
+
+  it('handles one side missing models field via nullish coalescing', () => {
+    const a: DailyStats = {
+      date: '2026-06-29', requestCount: 10, totalPromptTokens: 1000, totalCompletionTokens: 500,
+      totalCachedTokens: 0, retries: 0, errors: 0, protocols: {},
+      models: { xopglm52: { requestCount: 5, totalPromptTokens: 500, totalCompletionTokens: 200, totalCachedTokens: 0, retries: 0, errors: 0 } },
+    };
+    const b = { ...a, models: undefined } as unknown as DailyStats;
+    const merged = mergeDailyStats(a, b);
+    expect(merged.models.xopglm52.requestCount).toBe(5);
+  });
+});
+
+describe('loadDailyStats models compatibility', () => {
+  it('loadDailyStats returns empty models for old format file', () => {
+    const dir = join(TMP_DIR, 'compat_models', 'stats');
+    mkdirSync(dir, { recursive: true });
+    const oldFormat = JSON.stringify({
+      date: '2026-05-09',
+      requestCount: 50,
+      totalPromptTokens: 5000,
+      totalCompletionTokens: 0,
+      retries: 0,
+      errors: 0,
+      protocols: {},
+    });
+    writeFileSync(join(dir, '2026-05-09.json'), oldFormat, 'utf-8');
+    const stats = loadDailyStats(join(TMP_DIR, 'compat_models'), '2026-05-09');
+    expect(stats).not.toBeNull();
+    expect(stats!.models).toEqual({});
+  });
+
+  it('loadDailyStats preserves models from new format file', () => {
+    const dir = join(TMP_DIR, 'compat_models2', 'stats');
+    mkdirSync(dir, { recursive: true });
+    const newFormat = JSON.stringify({
+      date: '2026-05-11',
+      requestCount: 10,
+      totalPromptTokens: 1000,
+      totalCompletionTokens: 500,
+      retries: 0,
+      errors: 0,
+      protocols: {},
+      models: { xopglm52: { requestCount: 5, totalPromptTokens: 500, totalCompletionTokens: 200, totalCachedTokens: 0, retries: 0, errors: 0 } },
+    });
+    writeFileSync(join(dir, '2026-05-11.json'), newFormat, 'utf-8');
+    const stats = loadDailyStats(join(TMP_DIR, 'compat_models2'), '2026-05-11');
+    expect(stats!.models.xopglm52.totalPromptTokens).toBe(500);
+  });
+});
+
+describe('recordRequestComplete models accumulation', () => {
+  beforeEach(() => {
+    resetSessionStats();
+    resetDailyStatsFields('2026-06-29');
+  });
+
+  afterEach(() => {
+    resetSessionStats();
+    dailyStats.requestCount = 0;
+    dailyStats.totalPromptTokens = 0;
+    dailyStats.totalCompletionTokens = 0;
+    dailyStats.retries = 0;
+    dailyStats.errors = 0;
+    dailyStats.protocols = {};
+    dailyStats.models = {};
+  });
+
+  it('accumulates models by resolved model id', () => {
+    recordRequestComplete({
+      protocol: 'openai',
+      model: 'xopglm52',
+      inputTokens: 100,
+      outputTokens: 50,
+      cachedTokens: 0,
+      latencyMs: 10,
+      success: true,
+      retries: 0,
+    });
+    recordRequestComplete({
+      protocol: 'openai',
+      model: 'xopglm52',
+      inputTokens: 200,
+      outputTokens: 30,
+      cachedTokens: 0,
+      latencyMs: 10,
+      success: true,
+      retries: 0,
+    });
+    recordRequestComplete({
+      protocol: 'anthropic',
+      model: 'astron-code-latest',
+      inputTokens: 500,
+      outputTokens: 100,
+      cachedTokens: 0,
+      latencyMs: 10,
+      success: true,
+      retries: 0,
+    });
+    expect(sessionStats.models.xopglm52.totalPromptTokens).toBe(300);
+    expect(sessionStats.models.xopglm52.totalCompletionTokens).toBe(80);
+    expect(sessionStats.models['astron-code-latest'].totalPromptTokens).toBe(500);
+    expect(dailyStats.models.xopglm52.requestCount).toBe(2);
+  });
+
+  it('resetSessionStats clears models', () => {
+    recordRequestComplete({
+      protocol: 'openai',
+      model: 'xopglm52',
+      inputTokens: 100,
+      outputTokens: 50,
+      cachedTokens: 0,
+      latencyMs: 10,
+      success: true,
+      retries: 0,
+    });
+    resetSessionStats();
+    expect(sessionStats.models).toEqual({});
   });
 });
