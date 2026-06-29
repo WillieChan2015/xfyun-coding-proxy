@@ -315,9 +315,10 @@ describe('upstreamRequest', () => {
     });
     const result: UpstreamResult = await upstreamRequest(options);
 
-    // extractXfyunError 无法识别此格式，所以 success=true（无 streamError）
-    // 但关键：error 事件已通过 SSEFilter 透传给客户端
-    expect(result.success).toBe(true);
+    // extractXfyunError 现可识别 {"error":{"message":...}} 格式（格式2），
+    // 检测到上游错误后中断流并标记 stream_error；error 事件本身也已透传给客户端
+    expect(result.success).toBe(false);
+    expect(result.errorType).toBe('stream_error');
     const fullResponse = mockRawReplyHelper.writtenChunks.join('');
     expect(fullResponse).toContain('event: error');
     expect(fullResponse).toContain('context length exceeded');

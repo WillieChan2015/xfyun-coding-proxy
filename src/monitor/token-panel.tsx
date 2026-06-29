@@ -15,7 +15,7 @@ interface TokenPanelProps {
   byProtocol: ProtocolUsage[];
 }
 
-export function TokenPanel({ input, output, cached, todayTotal, todayCached, byProtocol }: TokenPanelProps) {
+export function TokenPanel({ input, output, cached, todayTotal, byProtocol }: TokenPanelProps) {
   const total = input + output;
   return (
     <Box flexDirection="column" paddingX={1}>
@@ -23,7 +23,7 @@ export function TokenPanel({ input, output, cached, todayTotal, todayCached, byP
       <Text>  Input:  {fmtTokens(input)}{cached > 0 ? ` (cached: ${fmtTokens(cached)})` : ''}</Text>
       <Text>  Output: {fmtTokens(output)}</Text>
       <Text>  Total:  {fmtTokens(total)}</Text>
-      <Text>  Today:  {fmtTokens(todayTotal)}{todayCached > 0 ? ` (cached: ${fmtTokens(todayCached)})` : ''}</Text>
+      <Text>  Today:  {fmtTokens(todayTotal)}</Text>
       {byProtocol.length > 0 && (
         <Box flexDirection="column" marginTop={1}>
           <Text bold>  By Protocol:</Text>

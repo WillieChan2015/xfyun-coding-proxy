@@ -52,8 +52,13 @@ export function isRetryableXfyunError(responseBody: string): boolean {
  *   - SSE 格式 data:{"error":{...}}
  */
 export function extractXfyunError(body: string): { code?: string | number; msg?: string; sid?: string } | null {
-  // 尝试去掉 SSE data: 前缀
-  const jsonStr = body.replace(/^data:\s*/m, '').trim();
+  // 提取 SSE data: 行内容（多行 SSE 如 "event: error\ndata: {...}\n\n" 时，
+  // 旧逻辑仅 replace 第一个 data: 前缀，残留 "event: error\n" 导致 JSON.parse 失败）
+  const dataLines = body
+    .split('\n')
+    .filter(l => l.startsWith('data:'))
+    .map(l => l.slice(5).trim());
+  const jsonStr = (dataLines.length > 0 ? dataLines.join('') : body).trim();
   try {
     const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
 
@@ -67,7 +72,8 @@ export function extractXfyunError(body: string): { code?: string | number; msg?:
       };
     }
 
-    // 格式2: {"error": {"code": "ModelArts.81001", "message": "..."}}
+    // 格式2: {"error": {"code": 10012, "message": "..."}}
+    // 讯飞流式错误常见此格式，错误信息在 error.message 内（可能含 "code: X, msg: Y" 文本）
     const error = parsed.error as Record<string, unknown> | undefined;
     if (error) {
       const msg = (error.message ?? parsed.error_msg) as string | undefined;
@@ -78,7 +84,7 @@ export function extractXfyunError(body: string): { code?: string | number; msg?:
       };
     }
   } catch {
-    // JSON 解析失败，尝试正则提取
+    // JSON 解析失败（如 chunk 分片、非 JSON 文本），尝试正则提取
     const codeMatch = body.match(/"code"\s*:\s*(\d+)/);
     const msgMatch = body.match(/"msg"\s*:\s*"([^"]*)"/);
     if (codeMatch || msgMatch) {

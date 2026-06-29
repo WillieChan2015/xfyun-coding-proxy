@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'bun:test';
 import {
   isRetryableXfyunError,
+  extractXfyunError,
   rewritePath,
   buildUpstreamUrl,
   RETRYABLE_STATUS_CODES,
@@ -36,6 +37,43 @@ describe('isRetryableXfyunError', () => {
 
   it('returns false for empty string', () => {
     expect(isRetryableXfyunError('')).toBe(false);
+  });
+});
+
+describe('extractXfyunError', () => {
+  it('提取格式1: {"code":10012,"msg":"...","sid":"..."}', () => {
+    const body = '{"code":10012,"msg":"EngineInternalError:error","sid":"cht000b3fc4@dx19e0072f47eb958700"}';
+    const result = extractXfyunError(body);
+    expect(result?.code).toBe(10012);
+    expect(result?.msg).toBe('EngineInternalError:error');
+    expect(result?.sid).toBe('cht000b3fc4@dx19e0072f47eb958700');
+  });
+
+  it('提取 SSE data: 前缀的格式1', () => {
+    const body = 'data: {"code":10012,"msg":"EngineInternalError:error"}\n\n';
+    const result = extractXfyunError(body);
+    expect(result?.code).toBe(10012);
+    expect(result?.msg).toBe('EngineInternalError:error');
+  });
+
+  // 真实场景：讯飞上游流式错误为 event: error + data: {"error":{"code":10012,"message":"..."}}
+  // 错误信息在 error.message 内（含 "code: 10012, msg: ..." 文本），无顶层 msg 字段
+  it('提取 SSE event:error 格式2（code 在 error.code，信息在 error.message）', () => {
+    const body =
+      'event: error\n' +
+      'data: {"error":{"code":10012,"message":"Xunfei request failed with Sid: cht000db43e@dx19f11f76f0bba5c352 code: 10012, msg: EngineInternalError:1105, timeStamp:14:00:57.309"}}\n\n';
+    const result = extractXfyunError(body);
+    expect(result?.code).toBe(10012);
+    expect(result?.msg).toBe('Xunfei request failed with Sid: cht000db43e@dx19f11f76f0bba5c352 code: 10012, msg: EngineInternalError:1105, timeStamp:14:00:57.309');
+    // sid 在 message 文本内（Sid: cht...），应被 extractSidFromMsg 提取
+    expect(result?.sid).toBe('cht000db43e@dx19f11f76f0bba5c352');
+  });
+
+  it('提取格式2: {"error":{"code":"ModelArts.81001","message":"..."}}', () => {
+    const body = '{"error":{"code":"ModelArts.81001","message":"model not found"}}';
+    const result = extractXfyunError(body);
+    expect(result?.code).toBe('ModelArts.81001');
+    expect(result?.msg).toBe('model not found');
   });
 });
 
