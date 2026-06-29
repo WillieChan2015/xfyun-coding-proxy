@@ -16,6 +16,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed / 修复
 
+## [0.0.8-beta.4] - 2026-06-29
+
+### Added / 新增
+
+- 新增 GLM-5.2 模型（`xopglm52`，500K 上下文）。
+- Added GLM-5.2 model (`xopglm52`, 500K context).
+- 新增模型默认思考深度配置（`defaultThinkingLevel`）：为 GLM-5.2、DeepSeek-V4-Pro、DeepSeek-V4-Flash 统一设置默认思考深度为 `max`，三协议（OpenAI / Anthropic / Ollama）均强制覆盖 `thinking_level`，无论客户端是否传递。
+- Added model default thinking level config (`defaultThinkingLevel`): GLM-5.2, DeepSeek-V4-Pro and DeepSeek-V4-Flash now default to `max` thinking level; all three protocols (OpenAI / Anthropic / Ollama) force-override `thinking_level` regardless of client input.
+- 新增 token 缓存命中（`cached_tokens`）的统计与展示：非流式从 `usage.prompt_tokens_details.cached_tokens` 提取，流式从 SSE chunk 正则匹配提取，`extractTokenUsage()` / `extractStreamUsage()` 均返回 `cachedTokens` 字段。
+- Added token cache hit (`cached_tokens`) tracking and display: extracted from `usage.prompt_tokens_details.cached_tokens` for non-streaming and via regex from SSE chunks for streaming; both `extractTokenUsage()` and `extractStreamUsage()` now return a `cachedTokens` field.
+- 统计数据模型（`SessionDayStats`、`ProtocolStats`、`DailyStats`、`RequestCompleteEvent`、`RequestLogEntry`）均新增 `totalCachedTokens` / `cachedTokens` 字段，`recordRequestComplete` 统一累加。
+- Stats data models (`SessionDayStats`, `ProtocolStats`, `DailyStats`, `RequestCompleteEvent`, `RequestLogEntry`) all gained `totalCachedTokens` / `cachedTokens` fields; `recordRequestComplete` accumulates them uniformly.
+- 监控面板 Token Usage 区域的 Input 行新增缓存命中展示（`Input: xxx (cached: yyy)`），日志流中每条请求行始终展示 `+yyy cached`。
+- Monitor panel Token Usage section now shows cache hits in the Input line (`Input: xxx (cached: yyy)`); log stream always displays `+yyy cached` per request.
+
+### Changed / 变更
+
+- 思考深度映射逻辑重构：有 `defaultThinkingLevel` 的模型强制使用默认值，无默认值但支持思考深度的模型在用户显式启用时传 `max`（不再支持 `high`）。
+- Thinking level mapping refactored: models with `defaultThinkingLevel` are forced to their default; models without a default but supporting thinking depth send `max` when explicitly enabled by the user (`high` no longer supported).
+- CLI `stats` 子命令输出（`printDailyStats`、`printSessionSummary`）新增 `Cached:` 行，始终展示当日/会话的缓存 token 总量。
+- CLI `stats` subcommand output (`printDailyStats`, `printSessionSummary`) now includes a `Cached:` line, always showing daily/session cache token totals.
+- `formatStatsLine` 表格行新增 `+xxx cached` 后缀，始终展示缓存命中数。
+- `formatStatsLine` table rows now include a `+xxx cached` suffix, always showing cache hit counts.
+- 持久化层（`mergeDailyStats`、`mergeProtocolStats`、`loadDailyStats`）兼容旧版本不含 `totalCachedTokens` 的统计文件（自动补 0）。
+- Persistence layer (`mergeDailyStats`, `mergeProtocolStats`, `loadDailyStats`) backward-compatible with older stats files missing `totalCachedTokens` (auto-fills 0).
+
+### Fixed / 修复
+
 ## [0.0.8-beta.3] - 2026-06-25
 
 ### Added / 新增

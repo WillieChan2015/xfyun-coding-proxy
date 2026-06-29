@@ -6,7 +6,7 @@
 
 本地代理服务，将 OpenAI / Anthropic / Ollama 协议格式的请求转发到讯飞星辰 Coding Plan API，供 Claude Code / Cursor / OpenCode / VS Code Continue.dev 等编程工具使用。
 
-> **当前版本：** `0.0.8-beta.3`
+> **当前版本：** `0.0.8-beta.4`
 >
 > 当前项目处于 beta 预览阶段，接口、配置和行为在首个稳定版本前仍可能发生调整。
 >
