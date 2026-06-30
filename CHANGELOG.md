@@ -12,6 +12,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added / 新增
 
+### Changed / 变更
+
+### Fixed / 修复
+
+## [0.0.8-beta.5] - 2026-06-30
+
+### Added / 新增
+
 - 监控面板 Token Usage 区域新增 By Model 模型统计，按模型展示 token 用量，宽屏与 By Protocol 并排、窄屏上下排列。
 - Monitor panel Token Usage section now includes a By Model breakdown showing per-model token usage; laid out side-by-side with By Protocol on wide screens, stacked on narrow ones.
 
