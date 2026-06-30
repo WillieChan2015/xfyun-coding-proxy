@@ -156,7 +156,7 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
     // requestTimeout 需大于 upstreamFetchTimeout（默认 300s），否则 Fastify 会先于 fetch 中断请求
     connectionTimeout: 30_000,
     requestTimeout: 600_000,
-    bodyLimit: 1_048_576, // 1MB
+    bodyLimit: 10_485_760, // 10MB：编程 IDE 长上下文请求（含完整对话历史、多文件 attachment、工具定义）常达数 MB，1MB 会误拒
     logger: {
       level: cfg.verbose ? 'debug' : 'info',
       // 防止 authorization 被记录到日志（敏感凭据保护）
@@ -192,9 +192,10 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
       const protocol = request.url.startsWith('/ollama/') ? 'ollama'
         : request.url.startsWith('/anthropic/') ? 'anthropic'
         : 'openai';
+      // body 解析失败时无法获知真实 model，用 unknown 而非 DEFAULT_MODEL，避免统计误导
       recordRequestComplete({
         protocol,
-        model: DEFAULT_MODEL,
+        model: 'unknown',
         inputTokens: 0,
         outputTokens: 0,
         cachedTokens: 0,
@@ -215,7 +216,7 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
         : 'openai';
       recordRequestComplete({
         protocol,
-        model: DEFAULT_MODEL,
+        model: 'unknown',
         inputTokens: 0,
         outputTokens: 0,
         cachedTokens: 0,

@@ -412,23 +412,24 @@ describe('printSessionSummary with protocols', () => {
     expect(output).toContain('openai');
   });
 
-  it('includes protocol summary in Today section when protocols exist', () => {
-    const origDate = dailyStats.date;
-    dailyStats.date = '2026-05-11';
-    dailyStats.requestCount = 10;
-    dailyStats.totalPromptTokens = 1000;
-    dailyStats.totalCompletionTokens = 500;
-    dailyStats.protocols = {
+  it('includes protocol summary in session By Protocol table when protocols exist', () => {
+    sessionStats.requestCount = 10;
+    sessionStats.totalPromptTokens = 1000;
+    sessionStats.totalCompletionTokens = 500;
+    sessionStats.protocols = {
       openai: { requestCount: 7, totalPromptTokens: 700, totalCompletionTokens: 300, retries: 0, errors: 0 },
       anthropic: { requestCount: 3, totalPromptTokens: 300, totalCompletionTokens: 200, retries: 0, errors: 0 },
     };
     const output = captureOutput(() => printSessionSummary());
-    expect(output).toMatch(/openai\s+7 req/);
-    expect(output).toMatch(/anthropic\s+3 req/);
-    expect(output).toContain('700 in');
-    expect(output).toContain('300 out');
-
-    dailyStats.date = origDate;
+    // 表格形式：表头列名 + 数据行，验证 openai 行含其请求数与 token 数
+    expect(output).toContain('By Protocol:');
+    expect(output).toContain('Requests');
+    expect(output).toContain('Input');
+    expect(output).toContain('Output');
+    expect(output).toMatch(/openai\s+7\s/);
+    expect(output).toMatch(/anthropic\s+3\s/);
+    expect(output).toContain('700');
+    expect(output).toContain('300');
   });
 
   it('omits By Protocol when protocols is empty', () => {
@@ -587,7 +588,7 @@ describe('printSessionSummary By Day section', () => {
     expect(output).toContain('2026-05-22');
   });
 
-  it('omits By Day when only one date exists in byDate', () => {
+  it('shows By Day when only one date exists in byDate', () => {
     sessionStats.requestCount = 10;
     sessionStats.totalPromptTokens = 5000;
     sessionStats.totalCompletionTokens = 1000;
@@ -595,7 +596,7 @@ describe('printSessionSummary By Day section', () => {
       [todayStr()]: { requestCount: 10, totalPromptTokens: 5000, totalCompletionTokens: 1000, retries: 0, errors: 0 },
     };
     const output = captureOutput(() => printSessionSummary());
-    expect(output).not.toContain('By Day:');
+    expect(output).toContain('By Day:');
   });
 
   it('omits By Day when byDate is empty', () => {
@@ -604,7 +605,7 @@ describe('printSessionSummary By Day section', () => {
   });
 });
 
-describe('printSessionSummary Today section with zero requests', () => {
+describe('printSessionSummary Today section removed', () => {
   afterEach(() => {
     resetSessionStats();
     dailyStats.requestCount = 0;
@@ -616,21 +617,14 @@ describe('printSessionSummary Today section with zero requests', () => {
     dailyStats.models = {};
   });
 
-  it('hides Today section when dailyStats.requestCount is 0', () => {
-    dailyStats.date = todayStr();
-    dailyStats.requestCount = 0;
-    const output = captureOutput(() => printSessionSummary());
-    expect(output).not.toContain('Today');
-  });
-
-  it('shows Today section when dailyStats.requestCount > 0', () => {
+  it('does not render Today section even when dailyStats has data', () => {
     dailyStats.date = todayStr();
     dailyStats.requestCount = 5;
     dailyStats.totalPromptTokens = 1000;
     dailyStats.totalCompletionTokens = 500;
     const output = captureOutput(() => printSessionSummary());
-    expect(output).toContain('Today');
-    expect(output).toContain('5');
+    // Today 区已并入 By Day，不再单独渲染
+    expect(output).not.toContain('Today');
   });
 });
 

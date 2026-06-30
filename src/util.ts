@@ -189,3 +189,13 @@ export function fmtTokens(n: number): string {
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k(${n.toLocaleString()})`;
   return String(n);
 }
+
+/**
+ * 格式化缓存命中百分比：cachedTokens / inputTokens * 100。
+ * 仅当 cachedTokens > 0 且 inputTokens > 0 时返回 `(N.N% cached)`，否则返回空串（不展示）。
+ * 用于日志 tokenInfo 行，替代原始 cachedTokens 数值，更直观反映缓存命中率。
+ */
+export function fmtCachedPercent(cachedTokens: number, inputTokens: number): string {
+  if (cachedTokens <= 0 || inputTokens <= 0) return '';
+  return `(${((cachedTokens / inputTokens) * 100).toFixed(1)}% cached)`;
+}

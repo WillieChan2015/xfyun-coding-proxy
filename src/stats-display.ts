@@ -2,7 +2,7 @@ import { fmtTokens } from './util';
 import { todayStr, formatStatsLine, formatDate } from './stats-store';
 import { loadDailyStats, listStatsDates } from './stats-persistence';
 import type { DailyStats } from './stats-types';
-import { sessionStats, dailyStats } from './stats-store';
+import { sessionStats } from './stats-store';
 
 // ---- 格式化工具函数 ----
 
@@ -21,6 +21,69 @@ function fmtUptime(ms: number): string {
 function errorRate(errors: number, requestCount: number): string {
   if (requestCount <= 0) return '0.0';
   return ((errors / requestCount) * 100).toFixed(1);
+}
+
+/** 表格行数据：name + 各统计列的格式化字符串 */
+interface StatsTableRow {
+  name: string;
+  requests: string;
+  input: string;
+  output: string;
+  cached: string;
+  errors: string;
+}
+
+/**
+ * 渲染统计明细为对齐表格（带表头 + 分隔线），替代逐行 formatStatsLine 输出。
+ * 列宽按表头与各行内容动态计算，保证中英文混合时仍对齐。
+ * @param indent - 表格缩进空格数（Session 主区 2，Today 子区 4）
+ * @param firstColHeader - 首列表头文案（默认 'Name'，By Day 用 'Date'）
+ */
+function renderStatsTable(rows: StatsTableRow[], indent = 2, firstColHeader = 'Name'): void {
+  if (rows.length === 0) return;
+  const pad = ' '.repeat(indent);
+  // 列定义：header 字段顺序对应 row 字段
+  const headers = [firstColHeader, 'Requests', 'Input', 'Output', 'Cached', 'Errors'];
+  const keys: (keyof StatsTableRow)[] = ['name', 'requests', 'input', 'output', 'cached', 'errors'];
+  // 每列最大宽度：max(表头, 各行对应字段)，name 左对齐其余右对齐
+  const widths = keys.map((key, i) =>
+    Math.max(
+      headers[i].length,
+      ...rows.map(r => String(r[key]).length),
+    ),
+  );
+  const headerLine = keys.map((_, i) => {
+    const h = headers[i];
+    return i === 0 ? h.padEnd(widths[i]) : h.padStart(widths[i]);
+  }).join('  ');
+  const sep = '─'.repeat(headerLine.length);
+  console.log(`${pad}${headerLine}`);
+  console.log(`${pad}${sep}`);
+  for (const r of rows) {
+    const line = keys.map((key, i) => {
+      const v = String(r[key]);
+      return i === 0 ? v.padEnd(widths[i]) : v.padStart(widths[i]);
+    }).join('  ');
+    console.log(`${pad}${line}`);
+  }
+}
+
+/** 将单个统计项转换为表格行；errors=0 时显示 '-'，cached=0 时显示 '+' */
+function toStatsTableRow(name: string, s: {
+  requestCount: number;
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  totalCachedTokens?: number;
+  errors?: number;
+}): StatsTableRow {
+  return {
+    name,
+    requests: String(s.requestCount),
+    input: fmtTokens(s.totalPromptTokens),
+    output: fmtTokens(s.totalCompletionTokens),
+    cached: `+${fmtTokens(s.totalCachedTokens ?? 0)}`,
+    errors: (s.errors ?? 0) > 0 ? String(s.errors) : '-',
+  };
 }
 
 // ---- 显示函数 ----
@@ -44,7 +107,7 @@ export function printDailyStats(date: string, stats: DailyStats | null): void {
   console.log(`  Errors:         ${stats.errors} (${errorRate(stats.errors, stats.requestCount)}%)`);
   const protocolKeys = Object.keys(stats.protocols);
   if (protocolKeys.length > 0) {
-    console.log('──────────────────────────────────────────────────');
+    console.log('────────────────────────────────────────────────');
     console.log('  By Protocol:');
     const sorted = protocolKeys.sort((a, b) => stats.protocols[b].requestCount - stats.protocols[a].requestCount);
     for (const name of sorted) {
@@ -107,61 +170,28 @@ export function printSessionSummary(): void {
   console.log(`  Errors:         ${sessionStats.errors} (${errorRate(sessionStats.errors, sessionStats.requestCount)}%)`);
   console.log(`  Uptime:         ${fmtUptime(uptime)}`);
 
-  // By Day 分日明细（跨天时展示每日贡献）
+  // By Day 分日明细：始终展示（单日时一行），合并原 Today 区，避免与 dailyStats 持久化累计语义混淆
   const byDateKeys = Object.keys(sessionStats.byDate).sort();
-  if (byDateKeys.length > 1) {
-    console.log('──────────────────────────────────────────────────');
+  if (byDateKeys.length > 0) {
+    console.log('────────────────────────────────────────────────');
     console.log('  By Day:');
-    for (const date of byDateKeys) {
-      const d = sessionStats.byDate[date];
-      console.log(formatStatsLine(date, d, 10));
-    }
+    renderStatsTable(byDateKeys.map(date => toStatsTableRow(date, sessionStats.byDate[date])), 2, 'Date');
   }
 
   const sessionProtocolKeys = Object.keys(sessionStats.protocols);
   if (sessionProtocolKeys.length > 0) {
-    console.log('──────────────────────────────────────────────────');
+    console.log('────────────────────────────────────────────────');
     console.log('  By Protocol:');
     const sorted = sessionProtocolKeys.sort((a, b) => sessionStats.protocols[b].requestCount - sessionStats.protocols[a].requestCount);
-    for (const name of sorted) {
-      const p = sessionStats.protocols[name];
-      console.log(formatStatsLine(name, p));
-    }
+    renderStatsTable(sorted.map(name => toStatsTableRow(name, sessionStats.protocols[name])));
   }
 
   const sessionModelKeys = Object.keys(sessionStats.models);
   if (sessionModelKeys.length > 0) {
-    console.log('──────────────────────────────────────────────────');
+    console.log('────────────────────────────────────────────────');
     console.log('  By Model:');
     const sorted = sessionModelKeys.sort((a, b) => sessionStats.models[b].requestCount - sessionStats.models[a].requestCount);
-    for (const name of sorted) {
-      const m = sessionStats.models[name];
-      console.log(formatStatsLine(name, m));
-    }
-  }
-
-  // Today 部分：仅单日运行且有实际数据时展示；
-  // 跨天时 By Day 已包含今天的明细，Today 的 cumulative 语义（含历史实例数据）容易混淆，故隐藏
-  if (byDateKeys.length <= 1 && dailyStats.date && dailyStats.requestCount > 0) {
-    const totalDailyTokens = dailyStats.totalPromptTokens + dailyStats.totalCompletionTokens;
-    console.log('──────────────────────────────────────────────────');
-    console.log(`  Today (${dailyStats.date})`);
-    console.log(`  Requests:       ${dailyStats.requestCount}`);
-    console.log(`  Tokens:         ${fmtTokens(totalDailyTokens)}`);
-    console.log(`    Input:        ${fmtTokens(dailyStats.totalPromptTokens)}`);
-    console.log(`    Output:       ${fmtTokens(dailyStats.totalCompletionTokens)}`);
-    console.log(`    Cached:       ${fmtTokens(dailyStats.totalCachedTokens)}`);
-    console.log(`  Retries:        ${dailyStats.retries}`);
-    console.log(`  Errors:         ${dailyStats.errors} (${errorRate(dailyStats.errors, dailyStats.requestCount)}%)`);
-    const todayProtocolKeys = Object.keys(dailyStats.protocols);
-    if (todayProtocolKeys.length > 0) {
-      console.log('    By Protocol:');
-      const sorted = todayProtocolKeys.sort((a, b) => dailyStats.protocols[b].requestCount - dailyStats.protocols[a].requestCount);
-      for (const name of sorted) {
-        const p = dailyStats.protocols[name];
-        console.log(formatStatsLine(name, p));
-      }
-    }
+    renderStatsTable(sorted.map(name => toStatsTableRow(name, sessionStats.models[name])));
   }
 
   console.log('════════════════════════════════════════════════');

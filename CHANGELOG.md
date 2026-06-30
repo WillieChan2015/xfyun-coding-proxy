@@ -12,9 +12,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added / 新增
 
+- 监控面板 Token Usage 区域新增 By Model 模型统计，按模型展示 token 用量，宽屏与 By Protocol 并排、窄屏上下排列。
+- Monitor panel Token Usage section now includes a By Model breakdown showing per-model token usage; laid out side-by-side with By Protocol on wide screens, stacked on narrow ones.
+
 ### Changed / 变更
 
+- `printSessionSummary` 的 By Day / By Protocol / By Model 改为表格形式（表头 + 分隔线 + 动态列宽对齐），替代逐行 `formatStatsLine` 输出。
+- `printSessionSummary` By Day / By Protocol / By Model now render as tables (header + separator + dynamic column-width alignment), replacing the per-line `formatStatsLine` output.
+- 合并 Today 区入 By Day，始终展示分日明细（单日一行，跨天多行），消除 `dailyStats` 持久化累计与 `byDate` 会话分日的语义混淆。
+- Merged the Today section into By Day, which now always shows per-day breakdown (one row for single-day, multiple for cross-day), removing the semantic confusion between persisted `dailyStats` totals and in-session `byDate` buckets.
+- 请求完成日志的缓存命中展示从原始 token 数（`+xxx cached`）改为命中率百分比（`(N.N% cached)`），且仅在缓存命中数大于 0 时展示。
+- Request completion log now shows cache hit ratio as a percentage (`(N.N% cached)`) instead of raw token count (`+xxx cached`), displayed only when cache hits are non-zero.
+
 ### Fixed / 修复
+
+- 修复大上下文请求（长对话历史、多文件 attachment、工具定义）被 Fastify `bodyLimit` 误拒返回 413 `Request body is too large`：入站请求体限制从 1MB 提升至 10MB。
+- Fixed large-context requests (long conversation history, multi-file attachments, tool definitions) being rejected by Fastify `bodyLimit` with 413 `Request body is too large`: inbound body limit raised from 1MB to 10MB.
+- 修复请求错误兜底统计误将失败请求记为默认模型 `astron-code-latest`：body 解析失败等无法获知真实模型的场景改记为 `unknown`，避免统计误导。
+- Fixed error fallback stats mistakenly recording failed requests under the default model `astron-code-latest`: scenarios where the real model cannot be determined (e.g. body parse failure) now record `unknown` to avoid misleading statistics.
+- 改进 `extractXfyunError` 对多行 SSE 数据格式的解析能力，确保正确处理并提取讯飞错误信息。
+- Improved `extractXfyunError` parsing of multi-line SSE data formats to correctly handle and extract Xfyun error messages.
 
 ## [0.0.8-beta.4] - 2026-06-29
 

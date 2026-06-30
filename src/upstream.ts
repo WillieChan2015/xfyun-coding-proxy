@@ -8,7 +8,7 @@
 import { FastifyInstance } from 'fastify';
 import { config, DEFAULT_MODEL } from './config';
 import { readWithTimeout, readBodyWithLimit } from './util';
-import { extractTokenUsage, fmtTokens } from './util';
+import { extractTokenUsage, fmtTokens, fmtCachedPercent } from './util';
 import { rolloverDailyStats, recordRequestComplete, recordRequestStart, requestStarted, requestFinished, streamingStarted, streamingFinished, Protocol } from './stats';
 import { isDebugEnabled, debugLogUpstream, debugLogResponse } from './debug-logger';
 
@@ -1055,9 +1055,10 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
       };
     }
 
+    const cachedStr = fmtCachedPercent(cachedTokens ?? 0, inputTokens ?? 0);
     const tokenInfo =
       inputTokens !== undefined
-        ? `in=${fmtTokens(inputTokens)}(+${fmtTokens(cachedTokens ?? 0)} cached) out=${fmtTokens(outputTokens ?? 0)} total=${fmtTokens(inputTokens + (outputTokens ?? 0))}`
+        ? `in=${fmtTokens(inputTokens)}${cachedStr ? ' ' + cachedStr : ''} out=${fmtTokens(outputTokens ?? 0)} total=${fmtTokens(inputTokens + (outputTokens ?? 0))}`
         : '';
     reqInfo.log.info(
       `stream completed | ${durationMs}ms | ${tokenInfo} | ua=${ua}`.replace(/ \| $/, ''),
@@ -1186,9 +1187,10 @@ export async function upstreamRequest(options: UpstreamOptions): Promise<Upstrea
     usageInfo = extractTokenUsage(finalBody.usage as Record<string, unknown> || {});
   }
 
+  const cachedStr = fmtCachedPercent(usageInfo.cachedTokens ?? 0, usageInfo.promptTokens ?? 0);
   const tokenInfo =
     usageInfo.promptTokens !== undefined
-      ? `in=${fmtTokens(usageInfo.promptTokens!)}(+${fmtTokens(usageInfo.cachedTokens ?? 0)} cached) out=${fmtTokens(usageInfo.completionTokens!)} total=${fmtTokens((usageInfo.promptTokens ?? 0) + (usageInfo.completionTokens ?? 0))}`
+      ? `in=${fmtTokens(usageInfo.promptTokens!)}${cachedStr ? ' ' + cachedStr : ''} out=${fmtTokens(usageInfo.completionTokens!)} total=${fmtTokens((usageInfo.promptTokens ?? 0) + (usageInfo.completionTokens ?? 0))}`
       : '';
   reqInfo.log.info(
     `request completed | ${durationMs}ms | ${tokenInfo} | ua=${ua}`.replace(/ \| $/, ''),
