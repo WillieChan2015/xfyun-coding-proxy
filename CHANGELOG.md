@@ -12,6 +12,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added / 新增
 
+### Changed / 变更
+
+### Fixed / 修复
+
+## [0.0.8-beta.6] - 2026-07-02
+
+### Added / 新增
+
 - debug 日志新增超期文件自动清理：启动时及跨天首条日志写入时清理超过保留天数的 `.ndjson` 文件，避免文件无限累积；保留天数可通过 `DEBUG_RETENTION_DAYS` 环境变量配置，默认 7 天。
 - Debug logs now auto-clean expired files: `.ndjson` files older than the retention window are pruned at startup and on the first log write of a new day; retention is configurable via `DEBUG_RETENTION_DAYS` (default 7 days).
 
