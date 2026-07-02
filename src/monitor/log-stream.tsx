@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink';
-import { fmtTokens } from '../util';
+import { fmtTokens, fmtCachedPercent } from '../util';
 
 export interface LogEntry {
   time: string;
@@ -58,12 +58,15 @@ export function LogStream({ entries, errorCount, maxVisible = 8, scrollOffset, t
         // 非代码补全请求（如 GET /v1/models）：无 token 数据，省略 model/stream/token 信息
         const isStaticRoute = !entry.pending && entry.success && entry.inputTokens === 0 && entry.outputTokens === 0;
         const head = `${entry.time} ${entry.requestId ?? '-'} ${tag} ${entry.path}${isStaticRoute ? '' : ` - ${entry.model}`}`;
+        // 缓存命中率百分比，cached=0 时不展示（与 upstream.ts tokenInfo 行一致）
+        const cachedStr = fmtCachedPercent(entry.cachedTokens, entry.inputTokens);
+        const cachedSuffix = cachedStr ? ` ${cachedStr}` : '';
         const tail = entry.pending
           ? `| stream=${entry.stream ?? '?'} | ua=${entry.ua ?? 'unknown'} | processing... ${((Date.now() - entry.timestamp) / 1000).toFixed(1)}s`
           : isStaticRoute
             ? `| ${(entry.latencyMs / 1000).toFixed(1)}s | ua=${entry.ua ?? 'unknown'}`
             : entry.success
-              ? `| stream=${entry.stream ?? '?'} | ${(entry.latencyMs / 1000).toFixed(1)}s | in=${fmtTokens(entry.inputTokens)}(+${fmtTokens(entry.cachedTokens)} cached) out=${fmtTokens(entry.outputTokens)} total=${fmtTokens(entry.inputTokens + entry.outputTokens)} | ua=${entry.ua ?? 'unknown'}`
+              ? `| stream=${entry.stream ?? '?'} | ${(entry.latencyMs / 1000).toFixed(1)}s | in=${fmtTokens(entry.inputTokens)}${cachedSuffix} out=${fmtTokens(entry.outputTokens)} total=${fmtTokens(entry.inputTokens + entry.outputTokens)} | ua=${entry.ua ?? 'unknown'}`
               : `| ${entry.latencyMs}ms | ${entry.error ?? 'unknown error'} | ua=${entry.ua ?? 'unknown'}`;
         return <Text key={i} color={!entry.success ? 'red' : undefined}>{head} {tail}</Text>;
       })}

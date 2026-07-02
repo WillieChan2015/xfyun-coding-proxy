@@ -12,7 +12,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added / 新增
 
+- debug 日志新增超期文件自动清理：启动时及跨天首条日志写入时清理超过保留天数的 `.ndjson` 文件，避免文件无限累积；保留天数可通过 `DEBUG_RETENTION_DAYS` 环境变量配置，默认 7 天。
+- Debug logs now auto-clean expired files: `.ndjson` files older than the retention window are pruned at startup and on the first log write of a new day; retention is configurable via `DEBUG_RETENTION_DAYS` (default 7 days).
+
 ### Changed / 变更
+
+- 监控面板日志流的缓存命中展示从原始 token 数（`+xxx cached`）改为命中率百分比（`(N.N% cached)`），且仅在缓存命中数大于 0 时展示。
+- Monitor panel log stream now shows cache hit ratio as a percentage (`(N.N% cached)`) instead of raw token count (`+xxx cached`), displayed only when cache hits are non-zero.
+- 监控面板 Token Usage 区域 Input 行的缓存命中展示从原始值（`cached: xxx(xxx)`）改为简短值加命中率（`cached: xxx(N.N%)`），更直观反映缓存命中情况。
+- Monitor panel Token Usage Input line now shows cache hits as a short value plus hit ratio (`cached: xxx(N.N%)`) instead of the raw value (`cached: xxx(xxx)`).
 
 ### Fixed / 修复
 

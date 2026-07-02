@@ -26,6 +26,9 @@ interface TokenPanelProps {
 export function TokenPanel({ input, output, cached, todayTotal, byProtocol, byModel }: TokenPanelProps) {
   const total = input + output;
   const { stdout } = useStdout();
+  // 缓存命中：简短值 + 命中率百分比，cached=0 或 input=0 时不展示
+  const cachedPercent = cached > 0 && input > 0 ? `(${((cached / input) * 100).toFixed(1)}%)` : '';
+  const cachedSuffix = cached > 0 ? ` (cached: ${fmtTokensShort(cached)}${cachedPercent})` : '';
   // 宽屏并排，窄屏上下（避免折行破坏结构）
   const wide = (stdout?.columns ?? 80) >= 80;
   const hasProtocol = byProtocol.length > 0;
@@ -53,7 +56,7 @@ export function TokenPanel({ input, output, cached, todayTotal, byProtocol, byMo
   return (
     <Box flexDirection="column" paddingX={1}>
       <Text bold color="cyan">Token Usage</Text>
-      <Text>  Input:  {fmtTokens(input)}{cached > 0 ? ` (cached: ${fmtTokens(cached)})` : ''}</Text>
+      <Text>  Input:  {fmtTokens(input)}{cachedSuffix}</Text>
       <Text>  Output: {fmtTokens(output)}</Text>
       <Text>  Total:  {fmtTokens(total)}</Text>
       <Text>  Today:  {fmtTokens(todayTotal)}</Text>

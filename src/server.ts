@@ -10,6 +10,7 @@ import { estimateInputTokens } from './util';
 import { printSessionSummary, initDailyStats, saveDailyStats, saveDailyStatsAsync, rolloverDailyStats, dailyStats, recordRequestComplete, requestFinished, getRequestLog, statsEmitter, sessionStats, getActiveRequests, getStreamingRequests, getLatencyStats, resetDailyStats, setRolloverFn, setSaveFn, isDailyStatsDirty, setDailyStatsDirty, Protocol } from './stats';
 import { checkForUpdate } from './update-check';
 import { getPackageVersion, getPackageName } from './cli';
+import { isDebugEnabled, cleanupOldDebugLogs } from './debug-logger';
 
 const name = getPackageName();
 const version = getPackageVersion();
@@ -96,6 +97,12 @@ function registerOllamaStaticRoutes(server: FastifyInstance, prefix: string): vo
 export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance> {
   // 初始化当天统计（从持久化文件加载已有数据）
   initDailyStats(cfg.logDir);
+
+  // 启动时清理超期 debug 日志（仅 debug 模式开启时触发，避免关闭 debug 时也无谓扫描）
+  if (isDebugEnabled()) {
+    const removed = cleanupOldDebugLogs();
+    if (removed > 0) console.log(`[debug] cleaned ${removed} expired debug log file(s)`);
+  }
 
   // 注入日期翻转回调，使 recordRequestComplete 在跨天完成时能自动触发 rollover
   setRolloverFn(() => rolloverDailyStats(cfg.logDir), true);
