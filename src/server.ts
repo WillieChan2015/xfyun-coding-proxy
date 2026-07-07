@@ -135,7 +135,12 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
             dateFormat: 'yyyy-MM-dd',
             mkdir: true,
             size: '50m',
-            limit: { count: 7 },
+            // removeOtherLogFiles=true 让 count 限制覆盖历史进程遗留文件，
+            // 否则每次重启为新进程，旧文件不计入 count 导致无限累积
+            limit: { count: 7, removeOtherLogFiles: true },
+            // 创建 current.log 软链接始终指向当前活跃日志文件，
+            // 提供"主文件"语义：tail -f current.log / IDE 打开 current.log 即可跟踪实时日志
+            symlink: true,
           },
         },
       ]
@@ -153,7 +158,8 @@ export async function createServer(cfg: ResolvedConfig): Promise<FastifyInstance
             dateFormat: 'yyyy-MM-dd',
             mkdir: true,
             size: '50m',
-            limit: { count: 7 },
+            limit: { count: 7, removeOtherLogFiles: true },
+            symlink: true,
           },
         },
       ];

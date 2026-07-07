@@ -28,6 +28,7 @@ export const SUPPORTED_MODELS: SupportedModel[] = [
   { id: 'xopdeepseekv4pro', name: 'DeepSeek-V4-Pro',     contextLength: 1_000_000, defaultThinkingLevel: 'max' },
   { id: 'xopdeepseekv4flash', name: 'DeepSeek-V4-Flash', contextLength: 1_000_000, defaultThinkingLevel: 'max' },
   { id: 'xopkimik26',       name: 'Kimi-K2.6',           contextLength: 256_000 },
+  { id: 'xopkimik27code',   name: 'kimi-k2.7-code',      contextLength: 256_000 },
   { id: 'xopglm51',         name: 'GLM-5.1',             contextLength: 200_000 },
   { id: 'xopglm52',         name: 'GLM-5.2',             contextLength: 500_000, defaultThinkingLevel: 'max' },
   { id: 'xminimaxm25',      name: 'MiniMax-M2.5',        contextLength: 128_000 },

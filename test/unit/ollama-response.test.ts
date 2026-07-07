@@ -77,8 +77,8 @@ describe('convertGenerateResponse', () => {
 describe('convertTagsResponse', () => {
   it('generates model list from SUPPORTED_MODELS', () => {
     const result = convertTagsResponse();
-    // 1 默认模型 + 16 具体模型 = 17
-    expect(result.models).toHaveLength(17);
+    // 1 默认模型 + 17 具体模型 = 18
+    expect(result.models).toHaveLength(18);
     // 首位是默认模型
     expect(result.models[0].name).toBe('astron-code-latest');
     expect(result.models[0].model).toBe('astron-code-latest');

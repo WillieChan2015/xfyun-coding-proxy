@@ -85,8 +85,8 @@ describe('resolveModelId', () => {
 });
 
 describe('SUPPORTED_MODELS', () => {
-  it('包含 16 个模型', () => {
-    expect(SUPPORTED_MODELS).toHaveLength(16);
+  it('包含 17 个模型', () => {
+    expect(SUPPORTED_MODELS).toHaveLength(17);
   });
 
   it('每个模型都有 id、name、contextLength', () => {
