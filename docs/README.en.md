@@ -6,7 +6,7 @@
 
 A local proxy that forwards OpenAI-compatible API requests to iFlytek Xingchen Coding Plan API, for use with OpenCode, Cursor, Trae, and other coding tools.
 
-> **Current version:** `0.0.8-beta.6`
+> **Current version:** `0.0.8-beta.7`
 >
 > This project is currently in an alpha preview stage, so APIs, configuration, and behavior may still change before the first stable release.
 >

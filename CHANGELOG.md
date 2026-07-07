@@ -16,6 +16,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed / 修复
 
+## [0.0.8-beta.7] - 2026-07-07
+
+### Added / 新增
+
+- 新增讯飞模型 `xopkimik27code`（kimi-k2.7-code），上下文长度 256k。
+- Added iFlytek model `xopkimik27code` (kimi-k2.7-code) with 256k context length.
+
+### Changed / 变更
+
+- 日志轮转 `limit` 启用 `removeOtherLogFiles: true`，让 `count` 限制覆盖历史进程遗留文件，避免重启后旧 `.log` 文件无限累积；同时启用 `symlink: true`，创建 `current.log` 软链接始终指向当前活跃日志文件，便于 `tail -f` 或 IDE 实时跟踪。
+- Log rotation `limit` now enables `removeOtherLogFiles: true` so the `count` cap covers files left by prior processes, preventing unbounded `.log` accumulation across restarts; `symlink: true` also creates a `current.log` symlink always pointing to the active log file for easy `tail -f` or IDE tracking.
+
+### Fixed / 修复
+
 ## [0.0.8-beta.6] - 2026-07-02
 
 ### Added / 新增
